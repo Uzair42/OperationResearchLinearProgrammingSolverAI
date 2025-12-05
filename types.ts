@@ -35,6 +35,8 @@ export interface TableauRow {
   ratio?: number | null;
 }
 
+export type SolverStatus = 'IN_PROGRESS' | 'OPTIMAL' | 'UNBOUNDED' | 'INFEASIBLE' | 'ALTERNATIVE_SOLUTION';
+
 export interface SolverStep {
   stepIndex: number;
   description: string;
@@ -46,9 +48,11 @@ export interface SolverStep {
   enteringVar?: string;
   leavingVar?: string;
   isOptimal: boolean;
-  status: 'IN_PROGRESS' | 'OPTIMAL' | 'UNBOUNDED' | 'INFEASIBLE';
+  status: SolverStatus;
   solution?: Record<string, number>;
   zValue?: number;
+  highlightCols?: number[]; // For visual explanations
+  highlightRows?: number[]; // For visual explanations
 }
 
 export enum SolverMethod {

@@ -1,5 +1,5 @@
 {
-  "name": "OptiSolve AI",
-  "description": "An intelligent Linear Programming solver that extracts problems from images and provides step-by-step Simplex, Big M, and Two-Phase method visualizations.",
+  "name": "OperationResearch Solver AI",
+  "description": "An intelligent Linear Programming solver that extracts problems from images, text, or manual input and provides step-by-step Simplex, Big M, and Two-Phase method visualizations.",
   "requestFramePermissions": []
 }
