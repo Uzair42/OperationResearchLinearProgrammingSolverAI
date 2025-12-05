@@ -53,6 +53,7 @@ export interface SolverStep {
   zValue?: number;
   highlightCols?: number[]; // For visual explanations
   highlightRows?: number[]; // For visual explanations
+  standardFormEquations?: string[]; // Added for explicit conversion step
 }
 
 export enum SolverMethod {

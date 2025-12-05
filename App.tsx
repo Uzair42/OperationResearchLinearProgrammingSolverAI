@@ -5,7 +5,7 @@ import { LPEngine } from './services/lpEngine';
 import TableauStep from './components/TableauStep';
 import Graph2D from './components/Graph2D';
 import ManualBuilder from './components/ManualBuilder';
-import { Camera, FileText, Play, ChevronRight, ChevronLeft, CheckCircle, RotateCcw, Moon, Sun, Edit3, Keyboard } from 'lucide-react';
+import { Camera, FileText, Play, CheckCircle, RotateCcw, Moon, Sun, Edit3, Keyboard, RefreshCw, Eye, ArrowDown, BarChart2 } from 'lucide-react';
 
 type InputMode = 'image' | 'text' | 'manual';
 
@@ -19,11 +19,13 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [problem, setProblem] = useState<LPProblem | null>(null);
   const [steps, setSteps] = useState<SolverStep[]>([]);
-  const [currentStepIndex, setCurrentStepIndex] = useState(0);
+  const [visibleStepCount, setVisibleStepCount] = useState(0); // For vertical reveal
   const [selectedMethod, setSelectedMethod] = useState<SolverMethod>(SolverMethod.SIMPLEX);
   const [textInput, setTextInput] = useState("");
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
 
   // Toggle Dark Mode
   useEffect(() => {
@@ -42,7 +44,11 @@ const App: React.FC = () => {
     setError(null);
     setProblem(null);
     setSteps([]);
-    setCurrentStepIndex(0);
+    setVisibleStepCount(0);
+    
+    // Create preview URL
+    const objectUrl = URL.createObjectURL(file);
+    setImagePreview(objectUrl);
 
     try {
       const reader = new FileReader();
@@ -90,17 +96,36 @@ const App: React.FC = () => {
     try {
         const solutionSteps = LPEngine.solve(problem, selectedMethod);
         setSteps(solutionSteps);
-        setCurrentStepIndex(0);
+        setVisibleStepCount(1); // Start with just the first step (setup)
+        
+        // Scroll to start of solution
+        setTimeout(() => {
+            const el = document.getElementById('solution-start');
+            el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 100);
     } catch (e: any) {
         setError("Solver error: " + e.message);
     }
   };
 
+  const handleShowNextStep = () => {
+      if (visibleStepCount < steps.length) {
+          setVisibleStepCount(prev => prev + 1);
+          // Scroll to the new step
+          setTimeout(() => {
+              bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+          }, 100);
+      }
+  };
+
   const reset = () => {
     setProblem(null);
     setSteps([]);
+    setVisibleStepCount(0);
     setError(null);
     setTextInput("");
+    setImagePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   return (
@@ -131,9 +156,9 @@ const App: React.FC = () => {
 
       <main className="flex-1 max-w-6xl mx-auto w-full p-4 md:p-8">
         
-        {/* INPUT SECTION */}
+        {/* INPUT SECTION - Only show if no problem extracted yet */}
         {!problem && (
-          <div className="flex flex-col items-center justify-start pt-10 animate-fade-in min-h-[60vh]">
+          <div className="flex flex-col items-center justify-start pt-10 animate-in fade-in duration-500 min-h-[60vh]">
             
             {/* Tabs */}
             <div className="flex space-x-2 bg-white dark:bg-slate-800 p-1 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 mb-8">
@@ -160,7 +185,7 @@ const App: React.FC = () => {
             <div className="w-full max-w-2xl">
                 {/* IMAGE MODE */}
                 {inputMode === 'image' && (
-                    <div className="bg-white dark:bg-slate-800 p-10 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 text-center">
+                    <div className="bg-white dark:bg-slate-800 p-10 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 text-center animate-in zoom-in-95 duration-300">
                         <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/50 text-primary-600 dark:text-primary-300 rounded-full flex items-center justify-center mx-auto mb-4">
                             <Camera className="w-8 h-8" />
                         </div>
@@ -187,7 +212,7 @@ const App: React.FC = () => {
 
                 {/* TEXT MODE */}
                 {inputMode === 'text' && (
-                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700">
+                    <div className="bg-white dark:bg-slate-800 p-8 rounded-xl shadow-lg border border-slate-100 dark:border-slate-700 animate-in zoom-in-95 duration-300">
                         <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4">Describe the Problem</h2>
                         <textarea 
                             value={textInput}
@@ -215,117 +240,148 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* REVIEW & SOLVE SECTION */}
-        {problem && steps.length === 0 && (
-            <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-                <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
-                    <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5 text-green-500"/> 
-                        Problem Setup
-                    </h2>
+        {/* REVIEW & SOLVE SECTION - ALWAYS VISIBLE if Problem Exists */}
+        {problem && (
+            <div className="space-y-6 animate-in slide-in-from-bottom-8 duration-500 max-w-6xl mx-auto mb-10">
+                <div className="grid md:grid-cols-2 gap-6 items-start">
                     
-                    <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-700 font-mono text-sm">
-                        <div className="font-bold text-primary-700 dark:text-primary-400 mb-2 text-lg">
-                            {problem.type} Z = {problem.objectiveCoefficients.map((c, i) => `${c < 0 ? `(${c})` : c}${problem.variables[i]}`).join(' + ')}
+                    {/* LEFT COLUMN: Problem Source */}
+                    <div className="space-y-6">
+                        {/* Source Preview */}
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700">
+                             <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-3 flex items-center gap-2">
+                                <Eye className="w-5 h-5 text-primary-500" />
+                                Original Question
+                             </h3>
+                             <div className="bg-slate-100 dark:bg-slate-900 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 flex items-center justify-center min-h-[150px]">
+                                {inputMode === 'image' && imagePreview && (
+                                    <img src={imagePreview} alt="Problem Source" className="w-full h-auto max-h-64 object-contain" />
+                                )}
+                                {inputMode === 'text' && textInput && (
+                                    <div className="p-4 text-slate-700 dark:text-slate-300 text-sm whitespace-pre-wrap w-full">
+                                        {textInput}
+                                    </div>
+                                )}
+                                {inputMode === 'manual' && (
+                                    <div className="p-4 text-slate-500 dark:text-slate-400 text-sm italic">
+                                        Problem entered manually via form builder.
+                                    </div>
+                                )}
+                             </div>
                         </div>
-                        <div className="text-slate-600 dark:text-slate-400 mb-2 font-semibold">Subject to:</div>
-                        {problem.constraints.map((c, i) => (
-                            <div key={i} className="ml-4 text-slate-800 dark:text-slate-300 mb-1">
-                                {c.coefficients.map((coef, idx) => `${coef}${problem.variables[idx]}`).join(' + ')} {c.sign} {c.rhs}
+                    </div>
+
+                    {/* RIGHT COLUMN: Math Model, Controls, and Graph */}
+                    <div className="space-y-6">
+                        {/* Math Model & Controls */}
+                        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 h-fit">
+                            <h2 className="text-xl font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2">
+                                <CheckCircle className="w-5 h-5 text-green-500"/> 
+                                Mathematical Model
+                            </h2>
+                            
+                            <div className="bg-slate-50 dark:bg-slate-900 p-5 rounded-lg border border-slate-200 dark:border-slate-700 font-mono text-sm mb-6">
+                                <div className="font-bold text-primary-700 dark:text-primary-400 mb-2 text-lg">
+                                    {problem.type} Z = {problem.objectiveCoefficients.map((c, i) => `${c < 0 ? `(${c})` : c}${problem.variables[i]}`).join(' + ')}
+                                </div>
+                                <div className="text-slate-600 dark:text-slate-400 mb-2 font-semibold">Subject to:</div>
+                                {problem.constraints.map((c, i) => (
+                                    <div key={i} className="ml-4 text-slate-800 dark:text-slate-300 mb-1">
+                                        {c.coefficients.map((coef, idx) => `${coef}${problem.variables[idx]}`).join(' + ')} {c.sign} {c.rhs}
+                                    </div>
+                                ))}
+                                <div className="ml-4 text-slate-400 mt-2 italic">{problem.variables.join(', ')} &ge; 0</div>
                             </div>
-                        ))}
-                         <div className="ml-4 text-slate-400 mt-2 italic">{problem.variables.join(', ')} &ge; 0</div>
-                    </div>
 
-                    {/* Method Selector */}
-                    <div className="mt-8">
-                        <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Select Solution Method</label>
-                        <div className="flex flex-wrap gap-3">
-                            {Object.values(SolverMethod).map(method => (
+                            {/* Method Selector */}
+                            <div>
+                                <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-3">Select Solution Method</label>
+                                <div className="flex flex-wrap gap-2 mb-6">
+                                    {Object.values(SolverMethod).map(method => (
+                                        <button 
+                                            key={method}
+                                            onClick={() => setSelectedMethod(method)}
+                                            className={`px-4 py-2 rounded-lg border text-sm font-medium transition ${
+                                                selectedMethod === method 
+                                                ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-500 text-primary-700 dark:text-primary-300 shadow-sm ring-1 ring-primary-500' 
+                                                : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-750'
+                                            }`}
+                                        >
+                                            {method}
+                                        </button>
+                                    ))}
+                                </div>
+
                                 <button 
-                                    key={method}
-                                    onClick={() => setSelectedMethod(method)}
-                                    className={`px-5 py-2.5 rounded-lg border text-sm font-medium transition ${
-                                        selectedMethod === method 
-                                        ? 'bg-primary-50 dark:bg-primary-900/30 border-primary-500 text-primary-700 dark:text-primary-300 shadow-sm ring-1 ring-primary-500' 
-                                        : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-750'
-                                    }`}
+                                    onClick={handleSolve}
+                                    className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition transform hover:scale-[1.01] flex items-center justify-center gap-2"
                                 >
-                                    {method}
+                                    {steps.length > 0 ? <RefreshCw className="w-5 h-5"/> : <Play className="w-5 h-5" />}
+                                    {steps.length > 0 ? 'Resolve with Selected Method' : 'Solve Step-by-Step'}
                                 </button>
-                            ))}
+                            </div>
                         </div>
+
+                        {/* Graph Preview (Only for 2 vars) - Placed AFTER Math Model and controls */}
+                        {problem.variables.length === 2 && (
+                             <div className="bg-slate-50 dark:bg-slate-900/50 p-2 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                                <div className="flex items-center gap-2 px-2 py-1 mb-2 text-slate-500 dark:text-slate-400 font-semibold text-xs uppercase tracking-wider">
+                                    <BarChart2 className="w-4 h-4" /> Graphical Visualization
+                                </div>
+                                <Graph2D problem={problem} />
+                             </div>
+                        )}
                     </div>
-
-                    <button 
-                        onClick={handleSolve}
-                        className="mt-8 w-full md:w-auto bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg shadow-lg transition transform hover:scale-105 flex items-center justify-center gap-2"
-                    >
-                        <Play className="w-5 h-5" /> Solve Step-by-Step
-                    </button>
                 </div>
-
-                {/* Show Graph Preview for 2 vars */}
-                {problem.variables.length === 2 && (
-                    <Graph2D problem={problem} />
-                )}
             </div>
         )}
 
         {/* SOLUTION STEPS SECTION */}
         {steps.length > 0 && (
-            <div className="space-y-6 pb-20 animate-fade-in max-w-6xl mx-auto">
-                {/* Controls */}
-                <div className="bg-white dark:bg-slate-800 p-4 rounded-lg shadow-sm border border-slate-200 dark:border-slate-700 flex items-center justify-between sticky top-20 z-40">
-                    <div>
-                        <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Step</span>
-                        <div className="text-2xl font-extrabold text-slate-900 dark:text-white leading-none mt-1">{currentStepIndex + 1} <span className="text-slate-300 dark:text-slate-600 text-lg">/ {steps.length}</span></div>
-                    </div>
-                    <div className="flex gap-3">
-                         <button 
-                            disabled={currentStepIndex === 0}
-                            onClick={() => setCurrentStepIndex(p => Math.max(0, p - 1))}
-                            className="p-3 rounded-full hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-30 disabled:cursor-not-allowed transition border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200"
-                         >
-                            <ChevronLeft className="w-6 h-6" />
-                        </button>
+            <div id="solution-start" className="space-y-8 pb-32 animate-in fade-in duration-700 max-w-6xl mx-auto border-t border-slate-200 dark:border-slate-700 pt-10 mt-10">
+                <div className="mb-6">
+                    <h2 className="text-3xl font-bold text-slate-800 dark:text-white">Solution Steps</h2>
+                    <p className="text-slate-500 dark:text-slate-400 text-lg mt-2">
+                        Optimization using <span className="font-bold text-primary-600 dark:text-primary-400">{selectedMethod}</span> method.
+                    </p>
+                </div>
+
+                {/* Step List (Vertical Timeline) */}
+                <div className="space-y-12">
+                    {steps.slice(0, visibleStepCount).map((step, idx) => (
+                        <div key={idx} className="animate-in slide-in-from-bottom-8 fade-in duration-700 relative">
+                             {/* Connector Line (except for last visible step if complete) */}
+                             {idx < visibleStepCount - 1 && (
+                                <div className="absolute left-8 top-full h-12 w-0.5 bg-slate-300 dark:bg-slate-600 -ml-px z-0"></div>
+                             )}
+                            <TableauStep step={step} />
+                        </div>
+                    ))}
+                    
+                    {/* Dummy div for scrolling to bottom */}
+                    <div ref={bottomRef} />
+                </div>
+
+                {/* Next Step Action */}
+                {visibleStepCount < steps.length && (
+                    <div className="flex justify-center pt-8">
                         <button 
-                            disabled={currentStepIndex === steps.length - 1}
-                            onClick={() => setCurrentStepIndex(p => Math.min(steps.length - 1, p + 1))}
-                            className="p-3 rounded-full bg-primary-600 hover:bg-primary-700 text-white shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition transform hover:scale-110 active:scale-95"
+                            onClick={handleShowNextStep}
+                            className="group flex flex-col items-center gap-2 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-750 text-slate-600 dark:text-slate-300 px-8 py-4 rounded-full shadow-lg border border-slate-200 dark:border-slate-700 transition-all hover:scale-105 active:scale-95"
                         >
-                            <ChevronRight className="w-6 h-6" />
+                            <span className="font-bold text-lg">Show Next Iteration</span>
+                            <ArrowDown className="w-6 h-6 animate-bounce text-primary-500" />
                         </button>
                     </div>
-                </div>
-
-                {/* Tableau Display */}
-                <TableauStep step={steps[currentStepIndex]} />
-
-                {/* Contextual Info */}
-                <div className="grid md:grid-cols-2 gap-4">
-                     <div className="bg-primary-50 dark:bg-primary-900/20 p-5 rounded-lg border border-primary-100 dark:border-primary-800 text-sm text-primary-900 dark:text-primary-100">
-                        <h5 className="font-bold mb-2 text-primary-800 dark:text-primary-300 text-base">Analysis</h5>
-                        <p className="leading-relaxed">{steps[currentStepIndex].description}</p>
-                        {steps[currentStepIndex].enteringVar && (
-                            <div className="mt-3 bg-white dark:bg-slate-800 p-3 rounded border border-primary-100 dark:border-primary-900/50 shadow-sm">
-                                <ul className="space-y-2">
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                                        <span>Entering: <strong>{steps[currentStepIndex].enteringVar}</strong> <span className="text-slate-500 dark:text-slate-400 text-xs">(Improves Z)</span></span>
-                                    </li>
-                                    <li className="flex items-center gap-2">
-                                        <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                                        <span>Leaving: <strong>{steps[currentStepIndex].leavingVar}</strong> <span className="text-slate-500 dark:text-slate-400 text-xs">(Tightest Constraint)</span></span>
-                                    </li>
-                                </ul>
-                            </div>
-                        )}
+                )}
+                
+                {visibleStepCount >= steps.length && (
+                     <div className="flex justify-center pt-10 text-slate-400 text-sm font-medium uppercase tracking-widest">
+                        End of Solution
                      </div>
-                </div>
+                )}
             </div>
         )}
-
       </main>
     </div>
   );

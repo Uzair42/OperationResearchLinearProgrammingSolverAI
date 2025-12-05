@@ -5,25 +5,31 @@ const clone = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
 export class LPEngine {
   
-  public static solve(problem: LPProblem, method: SolverMethod): SolverStep[] {
-    // 1. Normalize Problem: Convert Minimize Z to Maximize (-Z)
-    // We will solve everything as a Maximization problem internally.
-    // If original was Minimize, we flip the final Z value.
-    const isMinimization = problem.type === OptimizationType.MINIMIZE;
-    
-    // Adjust Objective Coefficients for Internal Maximization
-    // Max Z = c1x1 + ... -> coeffs are [c1, c2...]
-    // Min Z = c1x1 + ... -> Max W = -Z = -c1x1 - ... -> coeffs are [-c1, -c2...]
-    const objectiveCoeffs = problem.objectiveCoefficients.map(c => isMinimization ? -c : c);
+  public static solve(problemInput: LPProblem, method: SolverMethod): SolverStep[] {
+    // Clone input to avoid mutating the original object during normalization
+    const problem = clone(problemInput);
 
     const steps: SolverStep[] = [];
     
+    // --- PREPROCESSING: HANDLE NEGATIVE RHS (Inequality in Wrong Direction) ---
+    // Case (2): If RHS is negative, multiply entire constraint by -1 and flip sign.
+    const initialNormalizationLogs: string[] = [];
+    problem.constraints.forEach((c, idx) => {
+        if (c.rhs < 0) {
+            c.rhs = -c.rhs;
+            c.coefficients = c.coefficients.map(v => -v);
+            const oldSign = c.sign;
+            if (c.sign === ConstraintSign.LESS_EQ) c.sign = ConstraintSign.GREATER_EQ;
+            else if (c.sign === ConstraintSign.GREATER_EQ) c.sign = ConstraintSign.LESS_EQ;
+            initialNormalizationLogs.push(`Constraint ${idx + 1} had negative RHS. Multiplied by -1 and flipped sign from ${oldSign} to ${c.sign}.`);
+        }
+    });
+
+    // Case (1): Normalize Problem: Convert Minimize Z to Maximize (-Z)
+    const isMinimization = problem.type === OptimizationType.MINIMIZE;
+    const objectiveCoeffs = problem.objectiveCoefficients.map(c => isMinimization ? -c : c);
+
     // 2. Setup Variables
-    // Basics: x1, x2...
-    // Slacks: s1, s2... (for <=)
-    // Surplus: e1, e2... (for >=)
-    // Artificial: a1, a2... (for = or >=)
-    
     let numVars = problem.variables.length;
     let numConstraints = problem.constraints.length;
     
@@ -31,145 +37,116 @@ export class LPEngine {
     const colToVarName: string[] = [...problem.variables];
     
     // Track indices
-    const basicVarIndices: number[] = []; // Row i corresponds to variable at index k
-    const matrix: number[][] = []; // Constraint coefficients
+    const basicVarIndices: number[] = []; 
+    const matrix: number[][] = []; 
     const rhs: number[] = [];
     
     // Big M value
     const M = 10000;
 
-    // Augmented Objective Function Row (Z - Sum(cX) = 0)
-    // We store 'Cj' separately to build the Z-row (Cj - Zj) logic or direct row manipulation.
-    // Standard Simplex Row 0 format: Z + sum(-c_j * x_j) = RHS
-    // So initial coeffs for decision vars are -c_j.
-    let zRow = objectiveCoeffs.map(c => -c);
+    // Augmented Objective Function Row
+    let zRow = objectiveCoeffs.map(c => -c); // In tableau: Z - (c1x1 + ...) = 0  =>  Z + (-c1)x1 ...
     
-    // We need to extend zRow as we add columns
-    
-    // 3. Build Augmented Matrix
+    // 3. Build Augmented Matrix & Standard Form Strings
     problem.constraints.forEach((constraint, i) => {
         const row = [...constraint.coefficients];
         rhs.push(constraint.rhs);
         
-        // Handle Inequality/Equality
         if (constraint.sign === ConstraintSign.LESS_EQ) {
-            // Add Slack (+s)
             const sName = `s${i+1}`;
             headers.push(sName);
             colToVarName.push(sName);
-            
-            // Add 1 to this row, 0 to others
-            // Push 0 to existing rows for this new col
             matrix.forEach(r => r.push(0)); 
-            // Current row gets 1
             row.push(1);
-            // Z-row gets 0
             zRow.push(0);
-            
-            // Slack is basic
             basicVarIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.GREATER_EQ) {
-            // Add Surplus (-e) and Artificial (+a)
-            // Big M: Coeff of a in Objective is -M (for Max). 
-            // In Row 0 (Z - ...), this becomes +M.
-            
             const eName = `e${i+1}`;
             const aName = `a${i+1}`;
-            
-            // Surplus
             headers.push(eName);
             colToVarName.push(eName);
             matrix.forEach(r => r.push(0));
             row.push(-1);
-            zRow.push(0); // Surplus has 0 cost
+            zRow.push(0); 
             
-            // Artificial
             headers.push(aName);
             colToVarName.push(aName);
             matrix.forEach(r => r.push(0));
             row.push(1);
-            
-            // For Big M Maximize: Coeff is -M. In Z-equation: Z - (-M)a ... => Z + M a ...
-            // However, we usually eliminate M from Z-row immediately. 
-            // Let's store -M in the conceptual cost array, but in the tableau row 0, 
-            // we will perform the elimination step (Z_new = Z_old - M * ConstraintRow).
-            // For now, put 0 and we will adjust Z-row after building matrix.
             zRow.push(0); 
             
-            // Artificial is basic
             basicVarIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.EQ) {
-            // Add Artificial (+a)
             const aName = `a${i+1}`;
             headers.push(aName);
             colToVarName.push(aName);
-            
             matrix.forEach(r => r.push(0));
             row.push(1);
             zRow.push(0); 
-            
             basicVarIndices.push(headers.length - 1);
         }
         
         matrix.push(row);
     });
 
-    // 4. Initial Z-Row Adjustment for Big M
-    // If we have artificial variables, their cost is -M (max). 
-    // Current Z-row is Z - sum(c_orig * x). We need to subtract M * (sum(a_i)) effectively 
-    // to zero out the M coefficients in the Z-row for the basic variables.
-    // Easier approach: Calculate Z-row = Sum(C_B * Row) - C_j.
-    // Let's re-calculate Z-row dynamically from Basis to ensure correctness.
+    // Generate Standard Form Equations
+    const standardFormEquations: string[] = [];
     
-    // Helper to get cost of a variable index
+    // Add normalization logs to equations list or description
+    if (initialNormalizationLogs.length > 0) {
+        standardFormEquations.push("--- Normalization ---");
+        initialNormalizationLogs.forEach(l => standardFormEquations.push(l));
+        standardFormEquations.push("--- Standard Form ---");
+    }
+
+    matrix.forEach((row, i) => {
+        const terms: string[] = [];
+        row.forEach((coef, j) => {
+            if (Math.abs(coef) > 1e-6) {
+                const val = Math.abs(coef);
+                const sign = coef < 0 ? "- " : "+ ";
+                const name = colToVarName[j];
+                const valStr = Math.abs(val - 1) < 1e-6 ? "" : parseFloat(val.toFixed(2));
+                // Handle first term formatting
+                if (terms.length === 0) {
+                    terms.push(`${coef < 0 ? "-" : ""}${valStr}${name}`);
+                } else {
+                    terms.push(`${sign}${valStr}${name}`);
+                }
+            }
+        });
+        standardFormEquations.push(`${terms.join(" ")} = ${rhs[i]}`);
+    });
+
+    // 4. Initial Z-Row Adjustment for Big M
     const getCost = (colIdx: number): number => {
         const name = colToVarName[colIdx];
-        // Decision variable?
         const decIdx = problem.variables.indexOf(name);
         if (decIdx !== -1) return objectiveCoeffs[decIdx];
-        
-        // Slack/Surplus?
         if (name.startsWith('s') || name.startsWith('e')) return 0;
-        
-        // Artificial?
-        if (name.startsWith('a')) return -M; // Penalty for Max
-        
+        if (name.startsWith('a')) return -M; 
         return 0;
     };
 
     const calculateZRow = (): number[] => {
         const rowC = new Array(headers.length).fill(0);
-        
-        // For each column j
         for (let j = 0; j < headers.length; j++) {
             let zj = 0;
-            // Zj = Sum(C_Bi * a_ij)
             for (let i = 0; i < numConstraints; i++) {
                 const basisIdx = basicVarIndices[i];
                 const c_basis = getCost(basisIdx);
                 zj += c_basis * matrix[i][j];
             }
             const cj = getCost(j);
-            // For max tableau, usually we show (Zj - Cj) or (Cj - Zj).
-            // Standard "Z row" in many textbooks for Max is (Zj - Cj).
-            // Optimality reached when all (Zj - Cj) >= 0.
-            // WAIT: Most textbooks say Row 0 is Z + ... = RHS.
-            // If Z = C x, then Z - C x = 0. 
-            // The coefficients are -C. 
-            // If we pivot, we maintain this. 
-            // Let's use the definition: value in cell is (Zj - Cj).
-            // Max is optimal when all (Zj - Cj) >= 0.
             rowC[j] = zj - cj;
         }
         return rowC;
     };
     
-    // Initial Z Row
     let currentRow0 = calculateZRow();
     
-    // Calculate initial Z value
     const calculateCurrentZ = (): number => {
         let z = 0;
         for(let i=0; i<numConstraints; i++) {
@@ -180,7 +157,6 @@ export class LPEngine {
         return z;
     };
     
-    // Helper to extract solution for display
     const getSolutionObj = (): Record<string, number> => {
         const sol: Record<string, number> = {};
         problem.variables.forEach(v => sol[v] = 0);
@@ -193,7 +169,6 @@ export class LPEngine {
         return sol;
     };
 
-    // Helper to build TableauRow structure for UI
     const buildTableauState = (
         desc: string, 
         pivotRow?: number, 
@@ -202,10 +177,6 @@ export class LPEngine {
         status: SolverStatus = 'IN_PROGRESS',
         isOptimal: boolean = false
     ): SolverStep => {
-        
-        // We display the negated Z-row if standard form implies it, but let's stick to (Zj - Cj)
-        // Optimality Condition for Max: All (Zj - Cj) >= 0.
-        
         const tableauRows: TableauRow[] = matrix.map((row, i) => ({
             basicVar: colToVarName[basicVarIndices[i]],
             coefficients: [...row],
@@ -214,21 +185,25 @@ export class LPEngine {
         }));
 
         const currentZ = calculateCurrentZ();
-
-        // Check for Alternative Solution if optimal
-        if (isOptimal) {
-            // If any non-basic variable has 0 in Z-row, it's an alternative solution
-            // (Exclude artificials which should be 0 anyway if out of basis? No, artificials usually have large penalty)
+        
+        // Case (7): Alternate Solutions check
+        // If optimal, check if any non-basic variable has 0 in Z-row
+        if (isOptimal && status === 'OPTIMAL') {
             const hasAlternative = currentRow0.some((val, idx) => {
                 const isBasic = basicVarIndices.includes(idx);
                 const isArtificial = colToVarName[idx].startsWith('a');
-                return !isBasic && !isArtificial && Math.abs(val) < 1e-6;
+                // Non-basic, Non-artificial, with 0 reduced cost implies alternate optima
+                return !isBasic && !isArtificial && Math.abs(val) < 1e-5;
             });
-            if (hasAlternative && status === 'OPTIMAL') {
+            if (hasAlternative) {
                 status = 'ALTERNATIVE_SOLUTION';
-                desc += " (Alternative solutions exist because a non-basic variable has 0 reduced cost).";
+                desc += " Note: Zero reduced cost for a non-basic variable indicates Alternate (Multiple) Solutions exist.";
             }
         }
+        
+        // Case (6): Unbounded Solution Space check logic is implicit.
+        // If Simplex terminates optimally, solution is bounded even if space is unbounded in other directions.
+        // If Simplex fails to terminate (pivot col all <= 0), it's Unbounded Solution.
 
         return {
             stepIndex: steps.length + 1,
@@ -243,7 +218,8 @@ export class LPEngine {
             isOptimal,
             status,
             solution: getSolutionObj(),
-            zValue: isMinimization ? -currentZ : currentZ 
+            zValue: isMinimization ? -currentZ : currentZ, // Flip back for Min problems
+            standardFormEquations: steps.length === 0 ? standardFormEquations : undefined
         };
     };
 
@@ -251,40 +227,58 @@ export class LPEngine {
     const MAX_ITERATIONS = 20;
     let iteration = 0;
 
-    // Initial Step
-    steps.push(buildTableauState("Initial Tableau setup with Slack/Surplus/Artificial variables."));
+    // Step 1: Standard Form & Initial Tableau
+    const hasArtificials = colToVarName.some(n => n.startsWith('a'));
+    let initialDesc = "Converted problem to Standard Form. ";
+    if (initialNormalizationLogs.length > 0) initialDesc += "Normalized negative RHS. ";
+    
+    const addedTypes = [];
+    if (colToVarName.some(n => n.startsWith('s'))) addedTypes.push("Slack Variables");
+    if (colToVarName.some(n => n.startsWith('e'))) addedTypes.push("Surplus Variables");
+    if (colToVarName.some(n => n.startsWith('a'))) addedTypes.push("Artificial Variables");
+    initialDesc += `Added ${addedTypes.join(", ")}. `;
+    
+    if (hasArtificials) initialDesc += `Using Big-M method (M=${M}) to penalize artificial variables.`;
+    
+    steps.push(buildTableauState(initialDesc));
 
     while (iteration < MAX_ITERATIONS) {
         iteration++;
         
-        // 1. Check Optimality
-        // For Maximize (Zj - Cj), optimal if all >= -epsilon
-        // We look for most negative value to improve.
+        // 1. Check Optimality (Most negative Zj-Cj for Maximization of augmented problem)
         let minVal = 0;
         let pivotCol = -1;
         
         for (let j = 0; j < headers.length; j++) {
-            if (currentRow0[j] < minVal - 1e-9) { // Tolerance
+            // Looking for most negative value
+            if (currentRow0[j] < minVal - 1e-9) { 
                 minVal = currentRow0[j];
                 pivotCol = j;
             }
         }
 
+        // OPTIMALITY REACHED
         if (pivotCol === -1) {
-            // Optimal!
-            // Check for Infeasibility: Is there an artificial variable in basis with value > 0?
+            // Case (3): Infeasible Solution
+            // Check if any Artificial Variable is in the basis with a positive value
             const artificialInBasis = basicVarIndices.some((idx, i) => {
                 const name = colToVarName[idx];
-                return name.startsWith('a') && rhs[i] > 1e-6;
+                return name.startsWith('a') && rhs[i] > 1e-5;
             });
 
             if (artificialInBasis) {
-                const finalStep = buildTableauState("Optimality conditions met, but Artificial Variable remains in basis > 0.", undefined, undefined, undefined, 'INFEASIBLE', false);
+                const finalStep = buildTableauState(
+                    "Optimality conditions satisfied, but an Artificial Variable remains positive in the basis. This indicates NO FEASIBLE SOLUTION.", 
+                    undefined, undefined, undefined, 'INFEASIBLE', false
+                );
                 steps.push(finalStep);
                 return steps;
             }
 
-            const finalStep = buildTableauState("Optimality Reached. All Z-row coefficients are non-negative.", undefined, undefined, undefined, 'OPTIMAL', true);
+            const finalStep = buildTableauState(
+                "All (Zj - Cj) >= 0. Optimality Reached.", 
+                undefined, undefined, undefined, 'OPTIMAL', true
+            );
             steps.push(finalStep);
             return steps;
         }
@@ -293,34 +287,49 @@ export class LPEngine {
         let minRatio = Infinity;
         let pivotRow = -1;
         const ratios: (number | null)[] = [];
+        const ties: number[] = []; // To track Case (4) Degeneracy
 
         for (let i = 0; i < numConstraints; i++) {
             const val = matrix[i][pivotCol];
-            if (val > 1e-9) { // Strictly positive
+            if (val > 1e-9) { 
                 const ratio = rhs[i] / val;
                 ratios.push(ratio);
-                if (ratio < minRatio) {
+                
+                if (Math.abs(ratio - minRatio) < 1e-9) {
+                    // Tie detected
+                    ties.push(i);
+                } else if (ratio < minRatio) {
                     minRatio = ratio;
                     pivotRow = i;
+                    ties.length = 0; // Clear previous ties
+                    ties.push(i);
                 }
             } else {
                 ratios.push(null);
             }
         }
 
+        // Case (5): Unbounded Solution
         if (pivotRow === -1) {
-            // Unbounded
             const unboundStep = buildTableauState(
-                `Entering variable ${colToVarName[pivotCol]} can increase indefinitely. No positive pivot element found.`, 
+                `Entering variable ${colToVarName[pivotCol]} can increase indefinitely because all constraint coefficients in this column are non-positive. UNBOUNDED SOLUTION.`, 
                 undefined, pivotCol, ratios, 'UNBOUNDED', false
             );
             steps.push(unboundStep);
             return steps;
         }
 
-        // 3. Record Pre-Pivot Step (showing selection)
+        // Case (4): Degeneracy
+        let stepDesc = `Pivot: Enter ${colToVarName[pivotCol]} (Most Negative Cost), Leave ${colToVarName[basicVarIndices[pivotRow]]} (Min Ratio).`;
+        if (ties.length > 1) {
+            stepDesc += " [DEGENERACY DETECTED] Tie in minimum ratio. Arbitrarily selected first candidate to break tie.";
+        } else if (rhs[pivotRow] < 1e-9) {
+            stepDesc += " [DEGENERACY DETECTED] Pivot row RHS is 0.";
+        }
+
+        // 3. Record Pre-Pivot Step
         steps.push(buildTableauState(
-            `Pivot selection: Enter ${colToVarName[pivotCol]} (most negative Z), Leave ${colToVarName[basicVarIndices[pivotRow]]} (min ratio ${minRatio.toFixed(2)}).`, 
+            stepDesc, 
             pivotRow, 
             pivotCol, 
             ratios
@@ -328,33 +337,23 @@ export class LPEngine {
 
         // 4. Pivot Operation
         const pivotVal = matrix[pivotRow][pivotCol];
-        
-        // Divide pivot row by pivot val
-        for (let j = 0; j < matrix[pivotRow].length; j++) {
-            matrix[pivotRow][j] /= pivotVal;
-        }
+        for (let j = 0; j < matrix[pivotRow].length; j++) matrix[pivotRow][j] /= pivotVal;
         rhs[pivotRow] /= pivotVal;
         
-        // Update basic variable tracker
         basicVarIndices[pivotRow] = pivotCol;
         
-        // Eliminate other rows
         for (let i = 0; i < numConstraints; i++) {
             if (i !== pivotRow) {
                 const factor = matrix[i][pivotCol];
-                for (let j = 0; j < matrix[i].length; j++) {
-                    matrix[i][j] -= factor * matrix[pivotRow][j];
-                }
+                for (let j = 0; j < matrix[i].length; j++) matrix[i][j] -= factor * matrix[pivotRow][j];
                 rhs[i] -= factor * rhs[pivotRow];
             }
         }
         
-        // Re-calculate Z-row completely based on new basis to avoid accumulating floating point errors
         currentRow0 = calculateZRow();
     }
     
-    // Max iterations reached
-    steps.push(buildTableauState("Maximum iterations reached. Process terminated.", undefined, undefined, undefined, 'IN_PROGRESS', false));
+    steps.push(buildTableauState("Maximum iterations reached.", undefined, undefined, undefined, 'IN_PROGRESS', false));
     return steps;
   }
 }
