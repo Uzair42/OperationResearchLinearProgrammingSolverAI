@@ -30,6 +30,7 @@ export interface LPProblem {
 
 export interface TableauRow {
   basicVar: string;
+  basicVarCost: number; // Cb
   coefficients: number[];
   rhs: number;
   ratio?: number | null;
@@ -39,10 +40,14 @@ export type SolverStatus = 'IN_PROGRESS' | 'OPTIMAL' | 'UNBOUNDED' | 'INFEASIBLE
 
 export interface SolverStep {
   stepIndex: number;
+  phase?: 1 | 2; // For Two-Phase method
   description: string;
+  operations?: string[]; // Matrix operations performed to reach this step
   tableau: TableauRow[];
   headers: string[]; // Column headers (x1, x2, s1, a1, etc.)
-  zRow: number[]; // The objective function row in the tableau
+  cjRow: number[]; // The original objective function coefficients (Top row)
+  zjRow: number[]; // Zj row (Sum of Cb * aij)
+  netEvaluationRow: number[]; // Cj - Zj row
   pivotRowIdx?: number;
   pivotColIdx?: number;
   enteringVar?: string;
@@ -51,9 +56,7 @@ export interface SolverStep {
   status: SolverStatus;
   solution?: Record<string, number>;
   zValue?: number;
-  highlightCols?: number[]; // For visual explanations
-  highlightRows?: number[]; // For visual explanations
-  standardFormEquations?: string[]; // Added for explicit conversion step
+  standardFormEquations?: string[];
 }
 
 export enum SolverMethod {

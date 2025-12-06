@@ -6,354 +6,339 @@ const clone = <T>(obj: T): T => JSON.parse(JSON.stringify(obj));
 export class LPEngine {
   
   public static solve(problemInput: LPProblem, method: SolverMethod): SolverStep[] {
-    // Clone input to avoid mutating the original object during normalization
     const problem = clone(problemInput);
-
     const steps: SolverStep[] = [];
-    
-    // --- PREPROCESSING: HANDLE NEGATIVE RHS (Inequality in Wrong Direction) ---
-    // Case (2): If RHS is negative, multiply entire constraint by -1 and flip sign.
+    const isMinimization = problem.type === OptimizationType.MINIMIZE;
+
+    // 1. Pre-processing: Handle Negative RHS
     const initialNormalizationLogs: string[] = [];
     problem.constraints.forEach((c, idx) => {
         if (c.rhs < 0) {
             c.rhs = -c.rhs;
             c.coefficients = c.coefficients.map(v => -v);
-            const oldSign = c.sign;
             if (c.sign === ConstraintSign.LESS_EQ) c.sign = ConstraintSign.GREATER_EQ;
             else if (c.sign === ConstraintSign.GREATER_EQ) c.sign = ConstraintSign.LESS_EQ;
-            initialNormalizationLogs.push(`Constraint ${idx + 1} had negative RHS. Multiplied by -1 and flipped sign from ${oldSign} to ${c.sign}.`);
+            initialNormalizationLogs.push(`Constraint ${idx + 1}: RHS < 0. Multiplied by -1, flipped sign.`);
         }
     });
 
-    // Case (1): Normalize Problem: Convert Minimize Z to Maximize (-Z)
-    const isMinimization = problem.type === OptimizationType.MINIMIZE;
-    const objectiveCoeffs = problem.objectiveCoefficients.map(c => isMinimization ? -c : c);
-
-    // 2. Setup Variables
-    let numVars = problem.variables.length;
-    let numConstraints = problem.constraints.length;
-    
-    const headers: string[] = [...problem.variables];
-    const colToVarName: string[] = [...problem.variables];
-    
-    // Track indices
-    const basicVarIndices: number[] = []; 
+    // 2. Setup Variables and Matrix
+    const originalVars = problem.variables;
+    const headers: string[] = [...originalVars];
+    const colToVarName: string[] = [...originalVars];
     const matrix: number[][] = []; 
     const rhs: number[] = [];
+    const basicVarIndices: number[] = []; 
     
-    // Big M value
-    const M = 10000;
+    // Original Objective Function (Standardized to Maximize for internal calc)
+    // If Min Z, we Maximize Z' = -Z.
+    const originalObjCoeffs = problem.objectiveCoefficients.map(c => isMinimization ? -c : c);
+    
+    // Arrays to track variable types
+    const artificialIndices: number[] = [];
 
-    // Augmented Objective Function Row
-    let zRow = objectiveCoeffs.map(c => -c); // In tableau: Z - (c1x1 + ...) = 0  =>  Z + (-c1)x1 ...
-    
-    // 3. Build Augmented Matrix & Standard Form Strings
+    // Build Matrix & Add Slack/Surplus/Artificial
     problem.constraints.forEach((constraint, i) => {
         const row = [...constraint.coefficients];
         rhs.push(constraint.rhs);
         
+        // Add 0s for existing extended vars
+        while (row.length < headers.length) row.push(0);
+
         if (constraint.sign === ConstraintSign.LESS_EQ) {
+            // Add Slack (s)
             const sName = `s${i+1}`;
             headers.push(sName);
             colToVarName.push(sName);
-            matrix.forEach(r => r.push(0)); 
             row.push(1);
-            zRow.push(0);
+            // Fill previous rows
+            matrix.forEach(r => r.push(0));
             basicVarIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.GREATER_EQ) {
+            // Add Surplus (-e) and Artificial (a)
             const eName = `e${i+1}`;
             const aName = `a${i+1}`;
+            
             headers.push(eName);
             colToVarName.push(eName);
+            row.push(-1); // Surplus
             matrix.forEach(r => r.push(0));
-            row.push(-1);
-            zRow.push(0); 
-            
+
             headers.push(aName);
             colToVarName.push(aName);
+            row.push(1); // Artificial
             matrix.forEach(r => r.push(0));
-            row.push(1);
-            zRow.push(0); 
             
             basicVarIndices.push(headers.length - 1);
+            artificialIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.EQ) {
+            // Add Artificial (a)
             const aName = `a${i+1}`;
             headers.push(aName);
             colToVarName.push(aName);
-            matrix.forEach(r => r.push(0));
             row.push(1);
-            zRow.push(0); 
+            matrix.forEach(r => r.push(0));
+            
             basicVarIndices.push(headers.length - 1);
+            artificialIndices.push(headers.length - 1);
         }
         
         matrix.push(row);
     });
 
-    // Generate Standard Form Equations
-    const standardFormEquations: string[] = [];
-    
-    // Add normalization logs to equations list or description
-    if (initialNormalizationLogs.length > 0) {
-        standardFormEquations.push("--- Normalization ---");
-        initialNormalizationLogs.forEach(l => standardFormEquations.push(l));
-        standardFormEquations.push("--- Standard Form ---");
-    }
-
-    matrix.forEach((row, i) => {
-        const terms: string[] = [];
-        row.forEach((coef, j) => {
-            if (Math.abs(coef) > 1e-6) {
-                const val = Math.abs(coef);
-                const sign = coef < 0 ? "- " : "+ ";
-                const name = colToVarName[j];
-                const valStr = Math.abs(val - 1) < 1e-6 ? "" : parseFloat(val.toFixed(2));
-                // Handle first term formatting
-                if (terms.length === 0) {
-                    terms.push(`${coef < 0 ? "-" : ""}${valStr}${name}`);
-                } else {
-                    terms.push(`${sign}${valStr}${name}`);
-                }
-            }
-        });
-        standardFormEquations.push(`${terms.join(" ")} = ${rhs[i]}`);
+    // Normalize Matrix rows length (in case last constraint added vars)
+    matrix.forEach(row => {
+        while(row.length < headers.length) row.push(0);
     });
 
-    // 4. Initial Z-Row Adjustment for Big M
-    const getCost = (colIdx: number): number => {
-        const name = colToVarName[colIdx];
-        const decIdx = problem.variables.indexOf(name);
-        if (decIdx !== -1) return objectiveCoeffs[decIdx];
-        if (name.startsWith('s') || name.startsWith('e')) return 0;
-        if (name.startsWith('a')) return -M; 
-        return 0;
-    };
+    // Validation: Check if Simplex is valid
+    if (method === SolverMethod.SIMPLEX && artificialIndices.length > 0) {
+        throw new Error("Standard Simplex cannot solve problems with '>=' or '=' constraints requiring Artificial Variables. Please use Big M or Two-Phase method.");
+    }
 
-    const calculateZRow = (): number[] => {
-        const rowC = new Array(headers.length).fill(0);
-        for (let j = 0; j < headers.length; j++) {
-            let zj = 0;
-            for (let i = 0; i < numConstraints; i++) {
-                const basisIdx = basicVarIndices[i];
-                const c_basis = getCost(basisIdx);
-                zj += c_basis * matrix[i][j];
-            }
-            const cj = getCost(j);
-            rowC[j] = zj - cj;
-        }
-        return rowC;
-    };
-    
-    let currentRow0 = calculateZRow();
-    
-    const calculateCurrentZ = (): number => {
-        let z = 0;
-        for(let i=0; i<numConstraints; i++) {
-            const basisIdx = basicVarIndices[i];
-            const c_basis = getCost(basisIdx);
-            z += c_basis * rhs[i];
-        }
-        return z;
-    };
-    
-    const getSolutionObj = (): Record<string, number> => {
+    // Generate Standard Form Equations
+    const standardFormEquations: string[] = [];
+    if (initialNormalizationLogs.length) standardFormEquations.push("--- Normalization ---", ...initialNormalizationLogs);
+    standardFormEquations.push(`Objective: ${problem.type} Z = ${problem.objectiveCoefficients.map((c, i) => `${c}${problem.variables[i]}`).join(" + ")}`);
+    standardFormEquations.push("--- Standard Form Constraints ---");
+    matrix.forEach((row, i) => {
+        const terms = row.map((c, j) => Math.abs(c) > 1e-6 ? `${c < 0 ? '-' : '+'}${Math.abs(c)}${colToVarName[j]}` : '').filter(Boolean).join(" ");
+        standardFormEquations.push(`${terms.replace(/^\+/, '')} = ${rhs[i]}`);
+    });
+
+    // --- SOLVER LOGIC ---
+
+    const getSolution = (currentBasis: number[], currentRhs: number[]) => {
         const sol: Record<string, number> = {};
-        problem.variables.forEach(v => sol[v] = 0);
-        for(let i=0; i<numConstraints; i++) {
-            const name = colToVarName[basicVarIndices[i]];
-            if (problem.variables.includes(name)) {
-                sol[name] = rhs[i];
-            }
+        colToVarName.forEach(v => sol[v] = 0);
+        for(let i=0; i<currentBasis.length; i++) {
+            sol[colToVarName[currentBasis[i]]] = currentRhs[i];
         }
         return sol;
     };
 
-    const buildTableauState = (
-        desc: string, 
-        pivotRow?: number, 
-        pivotCol?: number,
-        ratios?: (number | null)[],
-        status: SolverStatus = 'IN_PROGRESS',
-        isOptimal: boolean = false
-    ): SolverStep => {
-        const tableauRows: TableauRow[] = matrix.map((row, i) => ({
-            basicVar: colToVarName[basicVarIndices[i]],
-            coefficients: [...row],
-            rhs: rhs[i],
-            ratio: ratios ? ratios[i] : null
-        }));
-
-        const currentZ = calculateCurrentZ();
+    const runSimplexIterations = (
+        initialDesc: string,
+        currentCostVector: number[], // Cj for current phase
+        phase: 1 | 2 | undefined,
+        startIterationCount: number
+    ) => {
+        const MAX_ITERS = 20;
+        let iter = 0;
         
-        // Case (7): Alternate Solutions check
-        // If optimal, check if any non-basic variable has 0 in Z-row
-        if (isOptimal && status === 'OPTIMAL') {
-            const hasAlternative = currentRow0.some((val, idx) => {
-                const isBasic = basicVarIndices.includes(idx);
-                const isArtificial = colToVarName[idx].startsWith('a');
-                // Non-basic, Non-artificial, with 0 reduced cost implies alternate optima
-                return !isBasic && !isArtificial && Math.abs(val) < 1e-5;
-            });
-            if (hasAlternative) {
-                status = 'ALTERNATIVE_SOLUTION';
-                desc += " Note: Zero reduced cost for a non-basic variable indicates Alternate (Multiple) Solutions exist.";
+        while (iter < MAX_ITERS) {
+            iter++;
+            
+            // 1. Calculate Cb, Zj, Cj-Zj
+            const Cb = basicVarIndices.map(idx => currentCostVector[idx]);
+            const ZjRow = new Array(headers.length).fill(0);
+            const NetEvalRow = new Array(headers.length).fill(0);
+            
+            for (let j = 0; j < headers.length; j++) {
+                let zj = 0;
+                for (let i = 0; i < basicVarIndices.length; i++) {
+                    zj += Cb[i] * matrix[i][j];
+                }
+                ZjRow[j] = zj;
+                NetEvalRow[j] = currentCostVector[j] - zj;
             }
+            
+            // Calculate Current Z value
+            let currentZ = 0;
+            for(let i=0; i<basicVarIndices.length; i++) currentZ += Cb[i] * rhs[i];
+
+            // 2. Optimality Test (Maximization: Stop if all Cj-Zj <= 0)
+            // Note: Floating point tolerance
+            let maxPosDiff = 0;
+            let pivotCol = -1;
+            
+            // Find entering variable (Most positive Cj-Zj for Max)
+            for (let j = 0; j < headers.length; j++) {
+                 // Don't pivot on artificials in Phase 2 (they are technically removed/zeroed)
+                 if (phase === 2 && artificialIndices.includes(j)) continue;
+
+                 if (NetEvalRow[j] > 1e-9 && NetEvalRow[j] > maxPosDiff) {
+                     maxPosDiff = NetEvalRow[j];
+                     pivotCol = j;
+                 }
+            }
+
+            const currentState: TableauRow[] = matrix.map((row, i) => ({
+                basicVar: colToVarName[basicVarIndices[i]],
+                basicVarCost: Cb[i],
+                coefficients: [...row],
+                rhs: rhs[i],
+                ratio: null
+            }));
+
+            // OPTIMAL?
+            if (pivotCol === -1) {
+                // If Phase 1, check if artificials are zero
+                if (phase === 1) {
+                    if (Math.abs(currentZ) > 1e-6) {
+                        steps.push({
+                            stepIndex: steps.length + 1,
+                            phase,
+                            description: "Phase 1 Optimal reached but W > 0. Artificial variables remain positive. INFEASIBLE SOLUTION.",
+                            tableau: currentState, headers, cjRow: [...currentCostVector], zjRow: ZjRow, netEvaluationRow: NetEvalRow,
+                            isOptimal: true, status: 'INFEASIBLE', zValue: currentZ
+                        });
+                        return 'INFEASIBLE';
+                    } else {
+                         steps.push({
+                            stepIndex: steps.length + 1,
+                            phase,
+                            description: "Phase 1 Optimal reached with W = 0. Feasible solution found. Proceeding to Phase 2.",
+                            tableau: currentState, headers, cjRow: [...currentCostVector], zjRow: ZjRow, netEvaluationRow: NetEvalRow,
+                            isOptimal: true, status: 'IN_PROGRESS', zValue: currentZ
+                        });
+                        return 'PROCEED_PHASE_2';
+                    }
+                }
+
+                // Normal Optimality
+                let status: SolverStatus = 'OPTIMAL';
+                // Check Alternate Solution: Non-basic var with 0 net eval
+                const altSol = NetEvalRow.some((val, j) => !basicVarIndices.includes(j) && Math.abs(val) < 1e-6 && (!artificialIndices.includes(j)));
+                if (altSol) status = 'ALTERNATIVE_SOLUTION';
+
+                steps.push({
+                    stepIndex: steps.length + 1,
+                    phase,
+                    description: phase === 2 ? "Phase 2 Optimality Reached. All Cj - Zj <= 0." : "Optimality Reached.",
+                    tableau: currentState, headers, cjRow: [...currentCostVector], zjRow: ZjRow, netEvaluationRow: NetEvalRow,
+                    isOptimal: true, status, solution: getSolution(basicVarIndices, rhs), zValue: isMinimization ? -currentZ : currentZ
+                });
+                return 'OPTIMAL';
+            }
+
+            // 3. Ratio Test
+            let minRatio = Infinity;
+            let pivotRow = -1;
+            const ratios: (number|null)[] = [];
+            
+            for (let i = 0; i < matrix.length; i++) {
+                const val = matrix[i][pivotCol];
+                if (val > 1e-9) {
+                    const ratio = rhs[i] / val;
+                    ratios.push(ratio);
+                    if (ratio < minRatio) {
+                        minRatio = ratio;
+                        pivotRow = i;
+                    }
+                } else {
+                    ratios.push(null);
+                }
+            }
+
+            // UNBOUNDED?
+            if (pivotRow === -1) {
+                steps.push({
+                    stepIndex: steps.length + 1,
+                    phase,
+                    description: "All coefficients in pivot column are non-positive. Solution is UNBOUNDED.",
+                    tableau: currentState, headers, cjRow: [...currentCostVector], zjRow: ZjRow, netEvaluationRow: NetEvalRow,
+                    pivotColIdx: pivotCol,
+                    enteringVar: colToVarName[pivotCol],
+                    isOptimal: false, status: 'UNBOUNDED', zValue: isMinimization ? -currentZ : currentZ
+                });
+                return 'UNBOUNDED';
+            }
+
+            // Record Step BEFORE pivoting
+            currentState.forEach((r, i) => r.ratio = ratios[i]);
+            
+            steps.push({
+                stepIndex: steps.length + 1,
+                phase,
+                description: iter === 1 && steps.length === 0 ? initialDesc : `Iteration ${steps.length}: Enter ${colToVarName[pivotCol]}, Leave ${colToVarName[basicVarIndices[pivotRow]]}.`,
+                tableau: currentState, headers, cjRow: [...currentCostVector], zjRow: ZjRow, netEvaluationRow: NetEvalRow,
+                pivotColIdx: pivotCol, pivotRowIdx: pivotRow,
+                enteringVar: colToVarName[pivotCol], leavingVar: colToVarName[basicVarIndices[pivotRow]],
+                isOptimal: false, status: 'IN_PROGRESS', zValue: isMinimization ? -currentZ : currentZ,
+                standardFormEquations: steps.length === 0 ? standardFormEquations : undefined
+            });
+
+            // 4. Pivot
+            const pivotVal = matrix[pivotRow][pivotCol];
+            const ops: string[] = [];
+            
+            // Normalize pivot row
+            if (Math.abs(pivotVal - 1) > 1e-9) {
+                ops.push(`R${pivotRow+1} = R${pivotRow+1} / ${pivotVal.toFixed(2)}`);
+                for (let j = 0; j < matrix[pivotRow].length; j++) matrix[pivotRow][j] /= pivotVal;
+                rhs[pivotRow] /= pivotVal;
+            }
+
+            // Eliminate other rows
+            for (let i = 0; i < matrix.length; i++) {
+                if (i !== pivotRow) {
+                    const factor = matrix[i][pivotCol];
+                    if (Math.abs(factor) > 1e-9) {
+                        ops.push(`R${i+1} = R${i+1} ${factor > 0 ? '-' : '+'} ${Math.abs(factor).toFixed(2)} * R${pivotRow+1}`);
+                        for (let j = 0; j < matrix[i].length; j++) matrix[i][j] -= factor * matrix[pivotRow][j];
+                        rhs[i] -= factor * rhs[pivotRow];
+                    }
+                }
+            }
+            
+            // Update Basis
+            basicVarIndices[pivotRow] = pivotCol;
+            
+            // Store ops in the NEXT step (or attach to this one? usually displayed with the next tableau)
+            // We'll attach to the next step when created.
         }
         
-        // Case (6): Unbounded Solution Space check logic is implicit.
-        // If Simplex terminates optimally, solution is bounded even if space is unbounded in other directions.
-        // If Simplex fails to terminate (pivot col all <= 0), it's Unbounded Solution.
-
-        return {
-            stepIndex: steps.length + 1,
-            description: desc,
-            tableau: tableauRows,
-            headers: headers,
-            zRow: [...currentRow0],
-            pivotRowIdx: pivotRow,
-            pivotColIdx: pivotCol,
-            enteringVar: pivotCol !== undefined ? colToVarName[pivotCol] : undefined,
-            leavingVar: pivotRow !== undefined ? colToVarName[basicVarIndices[pivotRow]] : undefined,
-            isOptimal,
-            status,
-            solution: getSolutionObj(),
-            zValue: isMinimization ? -currentZ : currentZ, // Flip back for Min problems
-            standardFormEquations: steps.length === 0 ? standardFormEquations : undefined
-        };
+        return 'MAX_ITER';
     };
 
-    // --- ITERATION LOOP ---
-    const MAX_ITERATIONS = 20;
-    let iteration = 0;
+    // --- EXECUTION ---
 
-    // Step 1: Standard Form & Initial Tableau
-    const hasArtificials = colToVarName.some(n => n.startsWith('a'));
-    let initialDesc = "Converted problem to Standard Form. ";
-    if (initialNormalizationLogs.length > 0) initialDesc += "Normalized negative RHS. ";
-    
-    const addedTypes = [];
-    if (colToVarName.some(n => n.startsWith('s'))) addedTypes.push("Slack Variables");
-    if (colToVarName.some(n => n.startsWith('e'))) addedTypes.push("Surplus Variables");
-    if (colToVarName.some(n => n.startsWith('a'))) addedTypes.push("Artificial Variables");
-    initialDesc += `Added ${addedTypes.join(", ")}. `;
-    
-    if (hasArtificials) initialDesc += `Using Big-M method (M=${M}) to penalize artificial variables.`;
-    
-    steps.push(buildTableauState(initialDesc));
+    if (method === SolverMethod.TWO_PHASE && artificialIndices.length > 0) {
+        // PHASE 1: Min sum of artificials (Max -sum a_i)
+        const phase1Costs = new Array(headers.length).fill(0);
+        artificialIndices.forEach(idx => phase1Costs[idx] = -1); // Maximize -a1 -a2...
 
-    while (iteration < MAX_ITERATIONS) {
-        iteration++;
+        const res1 = runSimplexIterations("Phase 1 Initialization: Minimize sum of artificial variables.", phase1Costs, 1, 0);
         
-        // 1. Check Optimality (Most negative Zj-Cj for Maximization of augmented problem)
-        let minVal = 0;
-        let pivotCol = -1;
+        if (res1 === 'PROCEED_PHASE_2') {
+            // PHASE 2: Restore original costs
+            // Construct Cj for Phase 2
+            const phase2Costs = new Array(headers.length).fill(0);
+            originalVars.forEach((v, i) => phase2Costs[i] = originalObjCoeffs[i]);
+            // Slack/Surplus have 0 cost
+            
+            // IMPORTANT: Remove artificial columns visually or just ignore them? 
+            // Academic approach: usually drop them. 
+            // Implementation: We'll set their costs to 0 and ensure they don't enter basis.
+            // Or better, filter headers. For simplicity, we keep matrix size but ignore them.
+            
+            runSimplexIterations("Phase 2 Start: Original Objective Function restored.", phase2Costs, 2, steps.length);
+        }
+    } 
+    else if (method === SolverMethod.BIG_M && artificialIndices.length > 0) {
+        // Big M Costs
+        const M = 1000;
+        const bigMCosts = new Array(headers.length).fill(0);
         
-        for (let j = 0; j < headers.length; j++) {
-            // Looking for most negative value
-            if (currentRow0[j] < minVal - 1e-9) { 
-                minVal = currentRow0[j];
-                pivotCol = j;
-            }
-        }
-
-        // OPTIMALITY REACHED
-        if (pivotCol === -1) {
-            // Case (3): Infeasible Solution
-            // Check if any Artificial Variable is in the basis with a positive value
-            const artificialInBasis = basicVarIndices.some((idx, i) => {
-                const name = colToVarName[idx];
-                return name.startsWith('a') && rhs[i] > 1e-5;
-            });
-
-            if (artificialInBasis) {
-                const finalStep = buildTableauState(
-                    "Optimality conditions satisfied, but an Artificial Variable remains positive in the basis. This indicates NO FEASIBLE SOLUTION.", 
-                    undefined, undefined, undefined, 'INFEASIBLE', false
-                );
-                steps.push(finalStep);
-                return steps;
-            }
-
-            const finalStep = buildTableauState(
-                "All (Zj - Cj) >= 0. Optimality Reached.", 
-                undefined, undefined, undefined, 'OPTIMAL', true
-            );
-            steps.push(finalStep);
-            return steps;
-        }
-
-        // 2. Ratio Test
-        let minRatio = Infinity;
-        let pivotRow = -1;
-        const ratios: (number | null)[] = [];
-        const ties: number[] = []; // To track Case (4) Degeneracy
-
-        for (let i = 0; i < numConstraints; i++) {
-            const val = matrix[i][pivotCol];
-            if (val > 1e-9) { 
-                const ratio = rhs[i] / val;
-                ratios.push(ratio);
-                
-                if (Math.abs(ratio - minRatio) < 1e-9) {
-                    // Tie detected
-                    ties.push(i);
-                } else if (ratio < minRatio) {
-                    minRatio = ratio;
-                    pivotRow = i;
-                    ties.length = 0; // Clear previous ties
-                    ties.push(i);
-                }
-            } else {
-                ratios.push(null);
-            }
-        }
-
-        // Case (5): Unbounded Solution
-        if (pivotRow === -1) {
-            const unboundStep = buildTableauState(
-                `Entering variable ${colToVarName[pivotCol]} can increase indefinitely because all constraint coefficients in this column are non-positive. UNBOUNDED SOLUTION.`, 
-                undefined, pivotCol, ratios, 'UNBOUNDED', false
-            );
-            steps.push(unboundStep);
-            return steps;
-        }
-
-        // Case (4): Degeneracy
-        let stepDesc = `Pivot: Enter ${colToVarName[pivotCol]} (Most Negative Cost), Leave ${colToVarName[basicVarIndices[pivotRow]]} (Min Ratio).`;
-        if (ties.length > 1) {
-            stepDesc += " [DEGENERACY DETECTED] Tie in minimum ratio. Arbitrarily selected first candidate to break tie.";
-        } else if (rhs[pivotRow] < 1e-9) {
-            stepDesc += " [DEGENERACY DETECTED] Pivot row RHS is 0.";
-        }
-
-        // 3. Record Pre-Pivot Step
-        steps.push(buildTableauState(
-            stepDesc, 
-            pivotRow, 
-            pivotCol, 
-            ratios
-        ));
-
-        // 4. Pivot Operation
-        const pivotVal = matrix[pivotRow][pivotCol];
-        for (let j = 0; j < matrix[pivotRow].length; j++) matrix[pivotRow][j] /= pivotVal;
-        rhs[pivotRow] /= pivotVal;
+        // Original costs
+        originalVars.forEach((v, i) => bigMCosts[i] = originalObjCoeffs[i]);
         
-        basicVarIndices[pivotRow] = pivotCol;
+        // Artificial costs = -M (Max)
+        artificialIndices.forEach(idx => bigMCosts[idx] = -M);
+
+        runSimplexIterations(`Initialization: Big M Method (M=${M}).`, bigMCosts, undefined, 0);
+    } 
+    else {
+        // Standard Simplex (or Big M/Two Phase if no artificials needed)
+        const simpleCosts = new Array(headers.length).fill(0);
+        originalVars.forEach((v, i) => simpleCosts[i] = originalObjCoeffs[i]);
         
-        for (let i = 0; i < numConstraints; i++) {
-            if (i !== pivotRow) {
-                const factor = matrix[i][pivotCol];
-                for (let j = 0; j < matrix[i].length; j++) matrix[i][j] -= factor * matrix[pivotRow][j];
-                rhs[i] -= factor * rhs[pivotRow];
-            }
-        }
-        
-        currentRow0 = calculateZRow();
+        runSimplexIterations("Initialization: Standard Simplex.", simpleCosts, undefined, 0);
     }
-    
-    steps.push(buildTableauState("Maximum iterations reached.", undefined, undefined, undefined, 'IN_PROGRESS', false));
+
     return steps;
   }
 }

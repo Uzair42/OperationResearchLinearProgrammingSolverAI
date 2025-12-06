@@ -1,6 +1,6 @@
 import React from 'react';
 import { SolverStep } from '../types';
-import { AlertTriangle, CheckCircle, XCircle, Info, ArrowDown, ArrowRight, ArrowLeft } from 'lucide-react';
+import { CheckCircle, AlertTriangle, XCircle, ArrowDown, ArrowRight, ArrowLeft, Info, Sigma, Calculator } from 'lucide-react';
 
 interface TableauStepProps {
   step: SolverStep;
@@ -8,181 +8,207 @@ interface TableauStepProps {
 
 const TableauStep: React.FC<TableauStepProps> = ({ step }) => {
   return (
-    <div className="w-full bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-6 transition-all duration-500 hover:shadow-xl">
+    <div className="w-full bg-white dark:bg-slate-800 rounded-xl shadow-lg border border-slate-200 dark:border-slate-700 p-4 md:p-6 transition-all duration-500 hover:shadow-xl">
       
-      {/* Step Header */}
-      <div className="mb-6 border-b border-slate-100 dark:border-slate-700 pb-4">
-        <div className="flex items-center justify-between mb-2">
-            <h4 className="font-bold text-xl text-primary-700 dark:text-primary-300">
-                {step.stepIndex === 1 ? "Step 1: Standard Form & Setup" : `Iteration ${step.stepIndex - 1}`}
-            </h4>
-            <span className={`px-3 py-1 text-xs font-mono rounded-full ${
+      {/* Header Info */}
+      <div className="mb-6 pb-4 border-b border-slate-100 dark:border-slate-700">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-3">
+                <h4 className="font-bold text-xl text-primary-700 dark:text-primary-300">
+                    {step.stepIndex === 1 ? "Initialization" : `Iteration ${step.stepIndex - 1}`}
+                </h4>
+                {step.phase && (
+                    <span className="px-2 py-0.5 bg-indigo-100 dark:bg-indigo-900 text-indigo-700 dark:text-indigo-300 text-xs font-bold uppercase rounded">
+                        Phase {step.phase}
+                    </span>
+                )}
+            </div>
+            <span className={`self-start md:self-auto px-3 py-1 text-xs font-mono rounded-full font-bold ${
                 step.status === 'OPTIMAL' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 
-                step.status === 'IN_PROGRESS' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
-                'bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
+                step.status === 'INFEASIBLE' ? 'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300' :
+                step.status === 'UNBOUNDED' ? 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300' :
+                'bg-blue-50 text-blue-600 dark:bg-blue-900/30 dark:text-blue-300'
             }`}>
-                {step.status === 'IN_PROGRESS' ? 'Pivot In Progress' : step.status}
+                {step.status === 'IN_PROGRESS' ? 'Step In Progress' : step.status}
             </span>
         </div>
-        <p className="text-slate-600 dark:text-slate-400">{step.description}</p>
+        <p className="text-slate-600 dark:text-slate-400 text-sm md:text-base">{step.description}</p>
         
-        {/* Pivot Summary */}
+        {/* Pivot Indicator */}
         {step.enteringVar && step.leavingVar && (
-             <div className="mt-3 flex items-center gap-4 text-sm font-medium bg-slate-50 dark:bg-slate-900/50 p-2 rounded-lg inline-block border border-slate-200 dark:border-slate-700">
-                 <div className="flex items-center text-green-600 dark:text-green-400">
-                    <span className="mr-1">Enter:</span> <span className="font-bold font-mono bg-green-100 dark:bg-green-900 px-2 rounded">{step.enteringVar}</span>
-                    <ArrowDown className="w-4 h-4 ml-1 animate-bounce" />
-                 </div>
-                 <div className="h-4 w-px bg-slate-300 dark:bg-slate-600"></div>
-                 <div className="flex items-center text-red-500 dark:text-red-400">
-                    <span className="mr-1">Leave:</span> <span className="font-bold font-mono bg-red-100 dark:bg-red-900 px-2 rounded">{step.leavingVar}</span>
-                    <ArrowLeft className="w-4 h-4 ml-1 animate-pulse" />
-                 </div>
-             </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3 text-sm font-medium">
+                <div className="flex items-center gap-2 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded border border-green-100 dark:border-green-800 text-green-700 dark:text-green-300">
+                    <span>Entering:</span>
+                    <span className="font-mono font-bold bg-white dark:bg-slate-800 px-1.5 rounded shadow-sm">{step.enteringVar}</span>
+                    <ArrowDown className="w-4 h-4 animate-bounce" />
+                </div>
+                <div className="hidden md:block w-4 h-px bg-slate-300 dark:bg-slate-600"></div>
+                <div className="flex items-center gap-2 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded border border-red-100 dark:border-red-800 text-red-700 dark:text-red-300">
+                    <span>Leaving:</span>
+                    <span className="font-mono font-bold bg-white dark:bg-slate-800 px-1.5 rounded shadow-sm">{step.leavingVar}</span>
+                    <ArrowLeft className="w-4 h-4 animate-pulse" />
+                </div>
+            </div>
         )}
       </div>
 
-      {/* Standard Form Equations Display (Only for Step 1) */}
-      {step.standardFormEquations && step.standardFormEquations.length > 0 && (
-        <div className="mb-8 bg-slate-50 dark:bg-slate-900/50 p-5 rounded-lg border border-slate-200 dark:border-slate-700">
-            <h5 className="text-sm font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3">Standard Form Constraints</h5>
-            <div className="space-y-2">
-                {step.standardFormEquations.map((eq, i) => (
-                    <div key={i} className="font-mono text-slate-800 dark:text-slate-200 text-base">
-                        {eq}
-                    </div>
-                ))}
-            </div>
-            <div className="mt-4 flex justify-center">
-                <ArrowDown className="w-5 h-5 text-slate-400 animate-bounce" />
-            </div>
-        </div>
+      {/* Standard Form Equations (Initial Step Only) */}
+      {step.standardFormEquations && (
+          <div className="mb-6 bg-slate-50 dark:bg-slate-900/40 p-4 rounded border border-slate-200 dark:border-slate-700 text-sm font-mono text-slate-700 dark:text-slate-300 overflow-x-auto">
+              <h5 className="font-sans font-bold text-xs uppercase text-slate-500 mb-2">Model Conversion</h5>
+              {step.standardFormEquations.map((eq, i) => (
+                  <div key={i} className="whitespace-nowrap pb-1">{eq}</div>
+              ))}
+          </div>
       )}
 
-      {/* Tableau Table */}
-      <div className="w-full overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-700">
-        <table className="min-w-full text-center text-sm border-collapse">
+      {/* Academic Tableau Table */}
+      <div className="w-full overflow-x-auto rounded-lg border border-slate-300 dark:border-slate-600 shadow-inner bg-slate-100 dark:bg-slate-900">
+        <table className="min-w-full text-center border-collapse">
             <thead>
-            <tr className="bg-slate-100 dark:bg-slate-700/50">
-                <th className="p-3 border-b border-r border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 font-bold whitespace-nowrap sticky left-0 bg-slate-100 dark:bg-slate-800 z-10">Basis</th>
-                {step.headers.map((h, i) => (
-                <th key={h} className={`p-3 border-b border-r border-slate-200 dark:border-slate-600 font-semibold min-w-[60px] relative
-                    ${i === step.pivotColIdx ? 'bg-green-100/50 dark:bg-green-900/30 text-green-800 dark:text-green-300 border-green-200 dark:border-green-800 border-b-2' : 'text-slate-700 dark:text-slate-200'}
-                `}>
-                    {h}
-                    {i === step.pivotColIdx && <div className="absolute top-0 left-0 w-full h-1 bg-green-500 animate-pulse"></div>}
-                </th>
-                ))}
-                <th className="p-3 border-b border-r border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 font-bold bg-slate-50 dark:bg-slate-750">RHS</th>
-                <th className="p-3 border-b text-slate-500 dark:text-slate-400">Ratio</th>
-            </tr>
-            </thead>
-            <tbody className="bg-white dark:bg-slate-800">
-            {step.tableau.map((row, rIdx) => {
-                const isLeaving = rIdx === step.pivotRowIdx;
-                return (
-                <tr key={rIdx} className={`border-b border-slate-100 dark:border-slate-700/50 transition-colors ${isLeaving ? 'bg-red-50 dark:bg-red-900/20' : ''}`}>
-                    <td className={`p-3 border-r border-slate-200 dark:border-slate-600 font-bold sticky left-0 z-10 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.1)] 
-                        ${isLeaving ? 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20' : 'text-primary-600 dark:text-primary-400 bg-white dark:bg-slate-800'}
-                    `}>
-                        {row.basicVar}
-                    </td>
-                    {row.coefficients.map((val, cIdx) => {
-                    const isPivot = rIdx === step.pivotRowIdx && cIdx === step.pivotColIdx;
-                    const isEntering = cIdx === step.pivotColIdx;
-                    return (
-                        <td 
-                            key={cIdx} 
-                            className={`p-3 border-r border-slate-100 dark:border-slate-700 font-mono text-slate-700 dark:text-slate-300 relative transition-all duration-300
-                                ${isPivot ? 'bg-yellow-200 dark:bg-yellow-600 text-yellow-900 dark:text-white font-extrabold ring-4 ring-inset ring-yellow-400/50 scale-105 z-20' : ''} 
-                                ${isEntering && !isPivot ? 'bg-green-50 dark:bg-green-900/10' : ''}`}
-                        >
-                            {isPivot && <span className="absolute inset-0 bg-yellow-400/30 animate-ping rounded-sm"></span>}
-                            <span className="relative z-10">
-                                {Math.abs(val) < 1e-10 ? 0 : (Number.isInteger(val) ? val : val.toFixed(2))}
-                            </span>
-                        </td>
-                    );
-                    })}
-                    <td className={`p-3 border-r border-slate-200 dark:border-slate-600 font-mono font-medium bg-slate-50/50 dark:bg-slate-800 ${isLeaving ? 'text-red-700 dark:text-red-300' : 'text-slate-900 dark:text-white'}`}>
-                        {row.rhs.toFixed(2)}
-                    </td>
-                    <td className="p-3 text-slate-400 font-mono text-xs">
-                    {row.ratio !== null && row.ratio !== undefined ? (isFinite(row.ratio) ? row.ratio.toFixed(2) : 'Inf') : '-'}
-                    </td>
+                {/* Row 1: Cj Values Header */}
+                <tr className="bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400 text-xs md:text-sm">
+                    <th className="p-2 border-r border-slate-300 dark:border-slate-600 bg-slate-200 dark:bg-slate-800 sticky left-0 z-20 min-w-[60px]">C<sub>j</sub></th>
+                    <th className="p-2 border-r border-slate-300 dark:border-slate-600 bg-slate-200 dark:bg-slate-800 sticky left-[60px] z-20 min-w-[80px]"></th>
+                    {step.cjRow.map((val, i) => (
+                        <th key={i} className="p-2 border-r border-b border-slate-300 dark:border-slate-600 min-w-[70px] font-mono">
+                            {Math.abs(val) > 1000 ? (val > 0 ? 'M' : '-M') : Number.isInteger(val) ? val : val.toFixed(2)}
+                        </th>
+                    ))}
+                    <th className="p-2 border-b border-slate-300 dark:border-slate-600 min-w-[80px]"></th>
+                    <th className="p-2 border-b border-slate-300 dark:border-slate-600 min-w-[60px]"></th>
                 </tr>
-                );
-            })}
-            {/* Z Row */}
-            <tr className="bg-slate-50 dark:bg-slate-900/30 font-semibold border-t-2 border-slate-200 dark:border-slate-600">
-                <td className="p-3 border-r border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-400 sticky left-0 bg-slate-50 dark:bg-slate-900 z-10">Cj - Zj</td>
-                {step.zRow.map((val, idx) => {
-                    const isEntering = idx === step.pivotColIdx;
+                {/* Row 2: Variable Names Header */}
+                <tr className="bg-slate-100 dark:bg-slate-700 text-slate-800 dark:text-slate-200 text-xs md:text-sm font-bold shadow-sm">
+                    <th className="p-2 border-r border-b border-slate-300 dark:border-slate-600 sticky left-0 z-20 bg-slate-100 dark:bg-slate-700">C<sub>B</sub></th>
+                    <th className="p-2 border-r border-b border-slate-300 dark:border-slate-600 sticky left-[60px] z-20 bg-slate-100 dark:bg-slate-700">Basis</th>
+                    {step.headers.map((h, i) => (
+                        <th key={h} className={`p-2 border-r border-b border-slate-300 dark:border-slate-600 relative ${i === step.pivotColIdx ? 'bg-green-100/50 dark:bg-green-900/30 text-green-700 dark:text-green-300' : ''}`}>
+                            {h}
+                            {i === step.pivotColIdx && <div className="absolute bottom-0 left-0 w-full h-1 bg-green-500"></div>}
+                        </th>
+                    ))}
+                    <th className="p-2 border-r border-b border-slate-300 dark:border-slate-600 bg-yellow-50 dark:bg-yellow-900/10">RHS</th>
+                    <th className="p-2 border-b border-slate-300 dark:border-slate-600 text-slate-500">Ratio</th>
+                </tr>
+            </thead>
+            <tbody className="bg-white dark:bg-slate-800 font-mono text-sm">
+                {step.tableau.map((row, rIdx) => {
+                    const isLeaving = rIdx === step.pivotRowIdx;
                     return (
-                        <td key={idx} className={`p-3 border-r border-slate-200 dark:border-slate-600 font-mono text-blue-600 dark:text-blue-400 ${isEntering ? 'bg-green-50 dark:bg-green-900/10 font-bold' : ''}`}>
-                            {Math.abs(val as number) < 1e-10 ? 0 : (val as number).toFixed(2)}
-                        </td>
-                    )
+                        <tr key={rIdx} className={`hover:bg-slate-50 dark:hover:bg-slate-750 ${isLeaving ? 'bg-red-50 dark:bg-red-900/10' : ''}`}>
+                            {/* Cb Column */}
+                            <td className={`p-2 border-r border-b border-slate-200 dark:border-slate-700 sticky left-0 z-10 font-bold text-slate-500 dark:text-slate-400 ${isLeaving ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-800'}`}>
+                                {Math.abs(row.basicVarCost) > 1000 ? (row.basicVarCost > 0 ? 'M' : '-M') : Number.isInteger(row.basicVarCost) ? row.basicVarCost : row.basicVarCost.toFixed(2)}
+                            </td>
+                            {/* Basis Column */}
+                            <td className={`p-2 border-r border-b border-slate-200 dark:border-slate-700 sticky left-[60px] z-10 font-bold text-primary-600 dark:text-primary-400 ${isLeaving ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-slate-800'}`}>
+                                {row.basicVar}
+                            </td>
+                            {/* Matrix Coefficients */}
+                            {row.coefficients.map((val, cIdx) => {
+                                const isPivot = rIdx === step.pivotRowIdx && cIdx === step.pivotColIdx;
+                                const isEntering = cIdx === step.pivotColIdx;
+                                return (
+                                    <td key={cIdx} className={`p-2 border-r border-b border-slate-200 dark:border-slate-700 relative
+                                        ${isPivot ? 'bg-yellow-200 dark:bg-yellow-600 text-black dark:text-white font-bold ring-inset ring-2 ring-yellow-400' : ''}
+                                        ${isEntering && !isPivot ? 'bg-green-50 dark:bg-green-900/10' : ''}
+                                    `}>
+                                        {Number.isInteger(val) ? val : Math.abs(val) < 1e-10 ? 0 : val.toFixed(2)}
+                                    </td>
+                                );
+                            })}
+                            {/* RHS */}
+                            <td className="p-2 border-r border-b border-slate-200 dark:border-slate-700 font-bold text-slate-800 dark:text-slate-200 bg-yellow-50/50 dark:bg-yellow-900/5">
+                                {row.rhs.toFixed(2)}
+                            </td>
+                            {/* Ratio */}
+                            <td className="p-2 border-b border-slate-200 dark:border-slate-700 text-slate-400 text-xs">
+                                {row.ratio !== null && row.ratio !== undefined ? (isFinite(row.ratio) ? row.ratio.toFixed(2) : 'Inf') : '-'}
+                            </td>
+                        </tr>
+                    );
                 })}
-                <td className="p-3 border-r border-slate-200 dark:border-slate-600 text-slate-900 dark:text-white font-bold bg-slate-100 dark:bg-slate-800">
-                    {step.zValue !== undefined ? (step.zValue as number).toFixed(2) : ''}
-                </td>
-                <td className="p-3"></td>
-            </tr>
             </tbody>
+            {/* Footer Rows */}
+            <tfoot className="bg-slate-50 dark:bg-slate-900 font-mono text-sm border-t-2 border-slate-300 dark:border-slate-600">
+                {/* Zj Row */}
+                <tr>
+                    <td className="p-2 border-r border-b border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 sticky left-0 z-10 font-bold text-slate-500" colSpan={2}>
+                        Z<sub>j</sub>
+                    </td>
+                    {step.zjRow.map((val, i) => (
+                        <td key={i} className="p-2 border-r border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400">
+                             {Math.abs(val) > 1000 ? (val > 0 ? 'M' : '-M') : Math.abs(val) < 1e-10 ? 0 : Number.isInteger(val) ? val : val.toFixed(2)}
+                        </td>
+                    ))}
+                    <td className="p-2 border-r border-b border-slate-200 dark:border-slate-700 font-bold text-primary-700 dark:text-primary-300 bg-primary-50 dark:bg-primary-900/20">
+                        {step.zValue !== undefined ? step.zValue.toFixed(4) : ''}
+                    </td>
+                    <td></td>
+                </tr>
+                {/* Cj - Zj Row */}
+                <tr className="bg-slate-200 dark:bg-slate-800 font-bold">
+                    <td className="p-2 border-r border-slate-300 dark:border-slate-600 sticky left-0 z-10 bg-slate-200 dark:bg-slate-800 text-slate-800 dark:text-slate-200" colSpan={2}>
+                        C<sub>j</sub> - Z<sub>j</sub>
+                    </td>
+                    {step.netEvaluationRow.map((val, i) => {
+                        const isEntering = i === step.pivotColIdx;
+                        return (
+                            <td key={i} className={`p-2 border-r border-slate-300 dark:border-slate-600 
+                                ${isEntering ? 'text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900' : 'text-slate-700 dark:text-slate-300'}
+                            `}>
+                                 {Math.abs(val) > 1000 ? (val > 0 ? 'M' : '-M') : Math.abs(val) < 1e-10 ? 0 : Number.isInteger(val) ? val : val.toFixed(2)}
+                            </td>
+                        )
+                    })}
+                    <td className="border-r border-slate-300 dark:border-slate-600"></td>
+                    <td></td>
+                </tr>
+            </tfoot>
         </table>
       </div>
 
-      {/* STATUS ALERTS */}
+      {/* Matrix Operations Explanation */}
+      {step.operations && step.operations.length > 0 && (
+          <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-900 rounded-lg border border-slate-200 dark:border-slate-700">
+             <h5 className="flex items-center gap-2 font-bold text-slate-600 dark:text-slate-300 mb-2">
+                 <Calculator className="w-4 h-4" /> Row Operations
+             </h5>
+             <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1 text-sm font-mono text-slate-500 dark:text-slate-400 list-disc list-inside">
+                 {step.operations.map((op, i) => (
+                     <li key={i}>{op}</li>
+                 ))}
+             </ul>
+          </div>
+      )}
+
+      {/* Final Status Alerts */}
       <div className="mt-6">
         {step.status === 'OPTIMAL' && (
-            <div className="flex items-center gap-4 p-5 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 rounded-xl border border-green-200 dark:border-green-800 animate-in fade-in zoom-in duration-300">
-                <div className="bg-green-100 dark:bg-green-800 p-2 rounded-full">
-                    <CheckCircle className="w-6 h-6" />
-                </div>
-                <div className="flex-1">
-                    <strong className="block text-lg">Optimal Solution Found</strong>
-                    <div className="mt-1 text-3xl font-bold">Z = {(step.zValue as number)?.toFixed(4)}</div>
-                </div>
-                <div className="flex flex-col gap-1 items-end">
-                     {step.solution && Object.entries(step.solution).map(([k, v]) => {
-                         if (Math.abs(v as number) < 1e-6) return null;
-                         return (
-                            <div key={k} className="bg-white dark:bg-slate-800 px-3 py-1 rounded shadow-sm border border-green-100 dark:border-green-900 text-sm font-mono">
-                                {k} = {(v as number).toFixed(4)}
-                            </div>
-                         );
-                     })}
-                </div>
-            </div>
-        )}
-
-        {step.status === 'ALTERNATIVE_SOLUTION' && (
-            <div className="flex items-start gap-3 p-4 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-800 dark:text-indigo-200 rounded-md border border-indigo-200 dark:border-indigo-800">
-                <Info className="w-5 h-5 mt-0.5 flex-shrink-0" />
+             <div className="flex items-center gap-4 p-5 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-200 rounded-xl border border-green-200 dark:border-green-800 animate-in fade-in zoom-in duration-300">
+                <CheckCircle className="w-8 h-8 flex-shrink-0" />
                 <div>
-                    <strong className="block text-lg">Alternative Solution</strong>
-                    <p className="mt-1 opacity-90 text-sm">Infinite solutions exist along the line segment.</p>
+                    <h3 className="text-lg font-bold">Optimal Solution Found</h3>
+                    <p className="text-sm opacity-90">Max Z = <span className="font-mono text-lg font-bold">{(step.zValue as number).toFixed(4)}</span></p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                        {step.solution && Object.entries(step.solution).map(([k,v]) => (
+                            Math.abs(v as number) > 1e-6 && (
+                                <span key={k} className="px-2 py-1 bg-white dark:bg-slate-800 rounded border border-green-200 dark:border-green-700 text-xs font-mono font-bold">
+                                    {k} = {(v as number).toFixed(2)}
+                                </span>
+                            )
+                        ))}
+                    </div>
                 </div>
             </div>
         )}
-
-        {step.status === 'UNBOUNDED' && (
-            <div className="flex items-start gap-3 p-4 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded-md border border-red-200 dark:border-red-800">
-                <AlertTriangle className="w-5 h-5 mt-0.5 flex-shrink-0" />
-                <div>
-                    <strong className="block text-lg">Unbounded Solution</strong>
-                    <p className="mt-1 text-sm">Objective increases indefinitely.</p>
-                </div>
-            </div>
-        )}
-
         {step.status === 'INFEASIBLE' && (
-            <div className="flex items-start gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 text-orange-800 dark:text-orange-200 rounded-md border border-orange-200 dark:border-orange-800">
-                <XCircle className="w-5 h-5 mt-0.5 flex-shrink-0" />
+             <div className="flex items-center gap-4 p-5 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-200 rounded-xl border border-red-200 dark:border-red-800">
+                <XCircle className="w-8 h-8 flex-shrink-0" />
                 <div>
-                    <strong className="block text-lg">Infeasible Solution</strong>
-                    <p className="mt-1 text-sm">Constraints cannot be satisfied simultaneously.</p>
+                    <h3 className="text-lg font-bold">Infeasible Solution</h3>
+                    <p className="text-sm">Artificial variables remain in the basis with positive values.</p>
                 </div>
             </div>
         )}
