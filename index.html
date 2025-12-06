@@ -49,25 +49,117 @@
       
       body { font-family: 'Inter', sans-serif; }
 
-      /* Print Styles for PDF Export */
+      /* --- BEAUTIFUL PDF REPORT STYLES --- */
       @media print {
-        @page { margin: 0.5cm; size: auto; }
-        body { background: white; color: black; }
-        .no-print { display: none !important; }
-        .print-only { display: block !important; }
-        header, footer { display: none !important; }
-        /* Ensure graphs and tables break pages nicely */
-        .break-inside-avoid { break-inside: avoid; }
-        /* Reset dark mode colors for print */
-        * {
-            background-color: transparent !important;
-            color: black !important;
-            box-shadow: none !important;
-            border-color: #ccc !important;
+        @page { margin: 10mm; size: A4; }
+        
+        html, body {
+            height: auto !important;
+            overflow: visible !important;
+            background: white !important; 
+            color: #1a202c !important; 
+            font-size: 11pt;
+            display: block !important;
         }
-        /* Specific overrides for clarity */
-        svg { stroke: black !important; }
-        .bg-primary-600 { background: none !important; color: black !important; border: 1px solid black; }
+
+        #root { display: block !important; }
+
+        /* Hide Interactive UI Elements */
+        header, footer, nav, button, 
+        .no-print, input, textarea, select,
+        .shadow-lg, .shadow-xl, .shadow-sm,
+        .input-mode-selector,
+        .theme-toggle,
+        .history-sidebar,
+        .fixed, .sticky { 
+          display: none !important; 
+        }
+
+        /* Show Print Header */
+        #print-header { display: block !important; margin-bottom: 2rem; border-bottom: 2px solid #000; padding-bottom: 1rem; }
+
+        /* Container Resets */
+        .max-w-7xl, .max-w-6xl, .max-w-md, .container, main { 
+            max-width: 100% !important; 
+            width: 100% !important;
+            margin: 0 !important; 
+            padding: 0 !important; 
+            display: block !important;
+        }
+        
+        .min-h-screen { min-height: auto !important; }
+        .grid { display: block !important; }
+        
+        /* Flatten UI cards */
+        .rounded-xl, .rounded-lg, .rounded-2xl { 
+            border-radius: 0 !important; 
+            border: none !important; 
+            box-shadow: none !important;
+            background: transparent !important;
+        }
+        .bg-white, .bg-slate-50, .bg-slate-100, .bg-slate-800, .bg-slate-900 { 
+            background: transparent !important; 
+        }
+        
+        /* Section Spacing */
+        .problem-statement-box { border: 1px solid #ccc !important; padding: 15px !important; margin-bottom: 20px; page-break-inside: avoid; }
+        .graph-container { border: 1px solid #ccc !important; page-break-inside: avoid; margin-bottom: 20px; }
+        
+        /* Graphs */
+        svg { 
+            max-height: 400px !important; 
+            width: 100% !important; 
+            break-inside: avoid;
+            page-break-inside: avoid;
+            margin: 10px auto;
+        }
+
+        /* Table Optimization */
+        .overflow-x-auto { overflow: visible !important; }
+        table { 
+            width: 100% !important; 
+            border-collapse: collapse !important; 
+            font-size: 9pt; 
+            margin-bottom: 20px;
+            break-inside: avoid;
+        }
+        th { 
+            background-color: #f3f4f6 !important; 
+            color: black !important; 
+            font-weight: bold; 
+            border: 1px solid #999 !important; 
+            padding: 4px 8px !important;
+        }
+        td { 
+            border: 1px solid #ccc !important; 
+            padding: 4px 8px !important; 
+        }
+
+        /* Colors for Print */
+        * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+        
+        .bg-green-50 { background-color: #f0fdf4 !important; }
+        .bg-red-50 { background-color: #fef2f2 !important; }
+        .bg-yellow-200 { background-color: #fef08a !important; }
+        .text-green-700 { color: #15803d !important; }
+        .text-red-700 { color: #b91c1c !important; }
+
+        /* Typography overrides */
+        h1, h2, h3, h4, h5 { color: black !important; page-break-after: avoid; }
+        p, span, div { color: #000 !important; }
+
+        /* Step Container */
+        .step-container { 
+            display: block !important;
+            break-inside: avoid; 
+            page-break-inside: avoid; 
+            margin-bottom: 30px; 
+            border-bottom: 1px dashed #999; 
+            padding-bottom: 20px; 
+            opacity: 1 !important;
+            transform: none !important;
+            animation: none !important;
+        }
       }
     </style>
   <script type="importmap">
