@@ -46,7 +46,7 @@ export class LPEngine {
         while (row.length < headers.length) row.push(0);
 
         if (constraint.sign === ConstraintSign.LESS_EQ) {
-            // Add Slack (s)
+            // Add Slack (s) -> coefficient +1
             const sName = `s${i+1}`;
             headers.push(sName);
             colToVarName.push(sName);
@@ -56,25 +56,26 @@ export class LPEngine {
             basicVarIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.GREATER_EQ) {
-            // Add Surplus (-e) and Artificial (a)
-            const eName = `e${i+1}`;
+            // Add Surplus (s) -> coefficient -1, and Artificial (a) -> coefficient +1
+            // Note: Changed from 'e' (Excess) to 's' (Surplus) for standard notation consistency
+            const sName = `s${i+1}`;
             const aName = `a${i+1}`;
             
-            headers.push(eName);
-            colToVarName.push(eName);
-            row.push(-1); // Surplus
+            headers.push(sName);
+            colToVarName.push(sName);
+            row.push(-1); // Surplus subtracted
             matrix.forEach(r => r.push(0));
 
             headers.push(aName);
             colToVarName.push(aName);
-            row.push(1); // Artificial
+            row.push(1); // Artificial added
             matrix.forEach(r => r.push(0));
             
             basicVarIndices.push(headers.length - 1);
             artificialIndices.push(headers.length - 1);
             
         } else if (constraint.sign === ConstraintSign.EQ) {
-            // Add Artificial (a)
+            // Add Artificial (a) -> coefficient +1
             const aName = `a${i+1}`;
             headers.push(aName);
             colToVarName.push(aName);

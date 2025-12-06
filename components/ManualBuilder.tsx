@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { LPProblem, OptimizationType, ConstraintSign } from '../types';
-import { Plus, Trash2, ArrowRight, Play } from 'lucide-react';
+import { Plus, Trash2, ArrowRight, Play, Settings } from 'lucide-react';
 
 interface ManualBuilderProps {
     onSolve: (problem: LPProblem) => void;
@@ -13,6 +13,7 @@ const ManualBuilder: React.FC<ManualBuilderProps> = ({ onSolve }) => {
     const [constraints, setConstraints] = useState<{coeffs: number[], sign: ConstraintSign, rhs: number}[]>([
         { coeffs: [0, 0], sign: ConstraintSign.LESS_EQ, rhs: 0 }
     ]);
+    const [nonNegative, setNonNegative] = useState(true);
 
     // Handle variable count change
     const updateNumVars = (n: number) => {
@@ -53,7 +54,8 @@ const ManualBuilder: React.FC<ManualBuilderProps> = ({ onSolve }) => {
                 coefficients: c.coeffs,
                 sign: c.sign,
                 rhs: c.rhs
-            }))
+            })),
+            nonNegative
         };
         onSolve(problem);
     };
@@ -63,7 +65,7 @@ const ManualBuilder: React.FC<ManualBuilderProps> = ({ onSolve }) => {
             <h3 className="text-lg font-bold mb-4">Manual Problem Entry</h3>
             
             {/* Settings */}
-            <div className="flex gap-4 mb-6 items-end">
+            <div className="flex flex-wrap gap-6 mb-6 items-end border-b border-slate-100 dark:border-slate-700 pb-6">
                 <div>
                     <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1">Optimization</label>
                     <select 
@@ -83,6 +85,18 @@ const ManualBuilder: React.FC<ManualBuilderProps> = ({ onSolve }) => {
                         onChange={(e) => updateNumVars(parseInt(e.target.value) || 2)}
                         className="w-20 p-2 rounded border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-900 dark:text-white text-sm focus:ring-2 focus:ring-primary-500"
                     />
+                </div>
+                <div className="flex items-center gap-2 pb-2">
+                    <input 
+                        type="checkbox" 
+                        id="nonNegative"
+                        checked={nonNegative}
+                        onChange={(e) => setNonNegative(e.target.checked)}
+                        className="w-4 h-4 text-primary-600 rounded focus:ring-primary-500 border-slate-300"
+                    />
+                    <label htmlFor="nonNegative" className="text-sm font-medium text-slate-700 dark:text-slate-300">
+                        Non-negative Constraints (x, y &ge; 0)
+                    </label>
                 </div>
             </div>
 

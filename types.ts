@@ -26,6 +26,14 @@ export interface LPProblem {
   variables: string[]; // Names of variables (e.g., x1, x2)
   objectiveCoefficients: number[];
   constraints: Constraint[];
+  nonNegative?: boolean; // Defaults to true. If false, variables are unrestricted (can be negative).
+}
+
+export interface HistoryItem {
+  id: string;
+  timestamp: number;
+  problem: LPProblem;
+  method: SolverMethod;
 }
 
 export interface TableauRow {
