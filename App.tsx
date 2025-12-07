@@ -5,7 +5,9 @@ import { LPEngine } from './services/lpEngine';
 import TableauStep from './components/TableauStep';
 import Graph2D from './components/Graph2D';
 import ManualBuilder from './components/ManualBuilder';
-import { Camera, FileText, Play, CheckCircle, RotateCcw, Moon, Sun, Edit3, Keyboard, RefreshCw, Eye, ArrowDown, BarChart2, Layers, History, Save, Download, Printer, Trash2, Palette, Cpu, FileJson, FileType } from 'lucide-react';
+import { Camera, FileText, Play, CheckCircle, RotateCcw, Moon, Sun, Edit3, Keyboard, RefreshCw, Eye, ArrowDown, BarChart2, Layers, History, Save, Download, Printer, Trash2, Palette, Cpu, FileJson, FileType, Loader2 } from 'lucide-react';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 
 type InputMode = 'image' | 'text' | 'manual';
 type ColorTheme = 'violet' | 'blue' | 'emerald' | 'rose';
@@ -19,6 +21,7 @@ const App: React.FC = () => {
   // App State
   const [inputMode, setInputMode] = useState<InputMode>('image');
   const [isLoading, setIsLoading] = useState(false);
+  const [isPdfLoading, setIsPdfLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [problem, setProblem] = useState<LPProblem | null>(null);
   const [steps, setSteps] = useState<SolverStep[]>([]);
@@ -117,14 +120,64 @@ const App: React.FC = () => {
       a.click();
   };
   
-  const handleDownloadPDF = () => {
-      // Expand all steps to ensure they are rendered in the DOM for printing
+  const handlePrintPDF = () => {
+      // Expand all steps for printing
       setVisibleStepCount(steps.length);
-      
-      // Allow React a moment to render the expanded steps before triggering print
       setTimeout(() => {
           window.print();
       }, 500);
+  };
+
+  const handleDownloadPDF = async () => {
+    setIsPdfLoading(true);
+    // Expand steps
+    setVisibleStepCount(steps.length);
+    
+    // Show report header temporarily for the capture
+    const header = document.getElementById('report-header-internal');
+    const controls = document.getElementById('report-controls');
+    
+    if (header) header.classList.remove('hidden');
+    if (controls) controls.classList.add('hidden');
+
+    // Wait for render
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    const input = document.getElementById('report-container');
+    if (input) {
+        try {
+            const canvas = await html2canvas(input, {
+                scale: 1.5, // Balance between quality and size
+                useCORS: true,
+                logging: false,
+                backgroundColor: darkMode ? '#0f172a' : '#ffffff' // Capture current theme bg
+            });
+
+            const imgData = canvas.toDataURL('image/png');
+            const imgWidth = canvas.width;
+            const imgHeight = canvas.height;
+            
+            // Create PDF with custom dimensions matching the content
+            // This creates a continuous "digital paper" feel
+            const pdf = new jsPDF({
+                orientation: imgWidth > imgHeight ? 'l' : 'p',
+                unit: 'px',
+                format: [imgWidth, imgHeight]
+            });
+
+            pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+            pdf.save(`solver_report_${selectedMethod}_${Date.now()}.pdf`);
+        } catch (e) {
+            console.error("PDF Gen Error", e);
+            alert("Failed to generate PDF. Try using the 'Print' button instead.");
+        }
+    }
+    
+    // Restore UI
+    if (header) header.classList.add('hidden');
+    if (controls) controls.classList.remove('hidden');
+    
+    setIsPdfLoading(false);
   };
 
   const handleExportProblemJSON = () => {
@@ -227,9 +280,23 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen flex flex-col transition-colors duration-200 bg-slate-50 dark:bg-slate-950 font-sans">
+    <div className="min-h-screen flex flex-col transition-colors duration-200 bg-slate-50 dark:bg-slate-950 font-sans relative">
       
-      {/* HIDDEN PRINT HEADER (Visible only in PDF) */}
+      {/* LOADING OVERLAY FOR PDF */}
+      {isPdfLoading && (
+          <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-sm flex flex-col items-center justify-center animate-in fade-in duration-300">
+              <div className="bg-white dark:bg-slate-800 p-8 rounded-2xl shadow-2xl text-center border border-slate-200 dark:border-slate-700 max-w-sm mx-4">
+                  <div className="w-16 h-16 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4 relative">
+                      <Loader2 className="w-8 h-8 text-primary-600 animate-spin" />
+                      <div className="absolute inset-0 border-4 border-primary-500 rounded-full animate-ping opacity-20"></div>
+                  </div>
+                  <h3 className="text-xl font-bold text-slate-900 dark:text-white mb-2">Generating PDF Report</h3>
+                  <p className="text-slate-500 dark:text-slate-400 text-sm">Please wait while we capture the solution and prepare your document...</p>
+              </div>
+          </div>
+      )}
+
+      {/* HIDDEN PRINT HEADER (Visible only in Browser Print) */}
       <div id="print-header" className="hidden">
           <div className="flex justify-between items-end border-b-2 border-slate-900 pb-4 mb-6">
               <div>
@@ -344,8 +411,23 @@ const App: React.FC = () => {
           </div>
       )}
 
-      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8">
+      <main className="flex-1 max-w-7xl mx-auto w-full p-4 md:p-8" id="report-container">
         
+        {/* INTERNAL REPORT HEADER (Initially Hidden, for PDF Gen) */}
+        <div id="report-header-internal" className="hidden mb-8 border-b-2 border-slate-900 pb-4">
+            <div className="flex justify-between items-end">
+              <div>
+                  <h1 className="text-3xl font-bold text-slate-900 dark:text-white">Optimization Report</h1>
+                  <p className="text-slate-500 font-mono mt-1">Generated by SolverAI</p>
+              </div>
+              <div className="text-right">
+                  <div className="text-sm font-bold text-slate-900 dark:text-white">Method: {selectedMethod}</div>
+                  <div className="text-sm text-slate-500">{new Date().toLocaleString()}</div>
+                  <div className="text-xs text-primary-600 font-bold mt-1">© MU42 - Muhammad Uzair</div>
+              </div>
+            </div>
+        </div>
+
         {/* INPUT SECTION */}
         {!problem && (
           <div className="flex flex-col items-center pt-10 animate-in fade-in duration-500">
@@ -409,12 +491,15 @@ const App: React.FC = () => {
                                 <CheckCircle className="w-5 h-5 text-green-500"/> Problem Model
                             </h2>
                             {/* Download Buttons for this specific method result */}
-                            <div className="flex gap-2 no-print">
+                            <div className="flex gap-2 no-print" id="report-controls">
                                 <button onClick={handleExportProblemJSON} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md transition dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600" title="Export JSON Data">
                                     <FileJson className="w-3.5 h-3.5" /> Data
                                 </button>
+                                <button onClick={handlePrintPDF} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-200 hover:bg-slate-300 rounded-md transition dark:bg-slate-600 dark:text-slate-200 dark:hover:bg-slate-500" title="Print View">
+                                    <Printer className="w-3.5 h-3.5" /> Print
+                                </button>
                                 <button onClick={handleDownloadPDF} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 rounded-md transition dark:bg-slate-200 dark:text-slate-900 dark:hover:bg-white" title="Download PDF Report">
-                                    <FileType className="w-3.5 h-3.5" /> PDF Report
+                                    {isPdfLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <Download className="w-3.5 h-3.5" />} PDF
                                 </button>
                             </div>
                         </div>
