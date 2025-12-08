@@ -1,5 +1,7 @@
+'use client';
+
 import React, { useState } from 'react';
-import { LPProblem, OptimizationType, ConstraintSign } from '../types';
+import { LPProblem, OptimizationType, ConstraintSign } from '@/lib/types';
 import { Plus, Trash2, ArrowRight, Play, Settings } from 'lucide-react';
 
 interface ManualBuilderProps {
