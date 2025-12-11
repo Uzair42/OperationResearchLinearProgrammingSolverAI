@@ -1,7 +1,5 @@
-'use client';
-
 import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { Constraint, ConstraintSign, LPProblem, OptimizationType } from '@/lib/types';
+import { Constraint, ConstraintSign, LPProblem, OptimizationType } from '../types';
 import { RotateCcw, Layers, Trophy, Maximize2, Minimize2 } from 'lucide-react';
 
 interface Graph2DProps {
@@ -41,8 +39,8 @@ const Graph2D: React.FC<Graph2DProps> = ({ problem }) => {
     return () => window.removeEventListener('keydown', handleEsc);
   }, []);
 
-  const width = isMaximized ? (typeof window !== 'undefined' ? window.innerWidth * 0.8 : 800) : 600;
-  const height = isMaximized ? (typeof window !== 'undefined' ? window.innerHeight * 0.8 : 600) : 450;
+  const width = isMaximized ? window.innerWidth * 0.8 : 600;
+  const height = isMaximized ? window.innerHeight * 0.8 : 450;
   const margin = 50;
 
   // --- 1. Coordinate System & Bounds Calculation ---

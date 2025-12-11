@@ -1,7 +1,5 @@
-'use client';
-
 import React from 'react';
-import { SolverStep } from '@/lib/types';
+import { SolverStep } from '../types';
 import { CheckCircle, AlertTriangle, XCircle, ArrowDown, ArrowRight, ArrowLeft, Info, Sigma, Calculator } from 'lucide-react';
 
 interface TableauStepProps {
